@@ -298,6 +298,7 @@
   <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4-4 10-10 8 8-6 6z"/><path d="M7 21h13M9 11l6 6"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+  <symbol id="i-eye-auto" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7c2.1 0 3.9.7 5.4 1.7M22 12s-3.5 7-10 7c-2.1 0-3.9-.7-5.4-1.7"/><circle cx="12" cy="12" r="3"/><path d="M19 3v4h-4M5 21v-4h4"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
@@ -378,8 +379,8 @@
     <div class="toolbar">
       <div class="seg" id="viewSeg">
         <button data-v="cmp" class="on" title="左右对比（1）">对比</button>
-        <button data-v="before" title="原图（2）">原图</button>
-        <button data-v="after" title="结果（3）">结果</button>
+        <button data-v="before" title="全屏原图（2；X 在原图 / 结果间切换）">原图</button>
+        <button data-v="after" title="全屏结果（3；X 在原图 / 结果间切换）">结果</button>
       </div>
       <div class="seg" id="baseSeg" hidden>
         <span class="lbl">左边</span>
@@ -413,12 +414,12 @@
         <span class="sep"></span>
         <button class="ib" id="bUndo" title="撤销（Ctrl+Z）"><svg class="i"><use href="#i-undo"/></svg></button>
         <button class="ib" id="bRedo" title="重做（Ctrl+Shift+Z）"><svg class="i"><use href="#i-redo"/></svg></button>
-        <button class="ib on" id="bEye" title="显示涂抹范围（M）"><svg class="i"><use href="#i-eye"/></svg></button>
+        <button class="ib" id="bEye" title="涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹"><svg class="i"><use id="bEyeIcon" href="#i-eye-auto"/></svg></button>
         <button class="ib" id="bClear" title="清除全部（可撤销）"><svg class="i"><use href="#i-trash"/></svg></button>
         <span class="saved" id="bSaved"></span>
         <button class="done-btn" id="bDone" title="完成涂抹（B 或 Esc）">完成</button>
       </div>
-      <div class="tip" id="brushTip" hidden>涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · M 看范围</div>
+      <div class="tip" id="brushTip" hidden>涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · 按住 M 看全部涂抹</div>
 
       <div class="progress" id="prog" hidden><div class="bar"></div><div class="pcard"><span class="spin"></span><span id="progText">去噪中</span><span class="t num" id="progTime"></span></div></div>
       <div class="brush" id="brushCur" hidden></div>
@@ -471,7 +472,8 @@
       <div><span>下载 / 重新去噪</span><span><kbd>Ctrl</kbd><kbd>S</kbd> <kbd>Ctrl</kbd><kbd>↵</kbd></span></div>
       <div><span>撤销 / 重做</span><span><kbd>Ctrl</kbd><kbd>Z</kbd> <kbd>+Shift</kbd></span></div>
       <div><span>缩放</span><span>滚轮</span></div>
-      <div><span>按住看涂抹范围</span><span><kbd>M</kbd></span></div>
+      <div><span>按住看全部涂抹</span><span><kbd>M</kbd></span></div>
+      <div><span>全屏原图 ↔ 结果</span><span><kbd>X</kbd></span></div>
     </div>
     <div class="dlg-foot">
       <span class="note">方法：缩小到预缩比例 → Real-ESRGAN 动漫超分放回原尺寸 → L0 平滑。<a href="https://github.com/CXP-2024/gpt-anime-denoise" target="_blank" rel="noopener">GitHub</a></span>
@@ -506,7 +508,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const S = {
   items: [], cur: null, queue: [], running: null, info: {},
   view: "cmp", base: "orig", split: 0.5, vp: null, lastFit: null,
-  brushMode: false, tool: "brush", eye: true, painting: false,
+  brushMode: false, tool: "brush", eyeMode: recall("eyeMode", "auto"), flash: false, painting: false,
   peekOrig: false, peekMask: false, space: false, spaceMode: "", sizeAt: null,
   brush: recall("brush", 60), params: recall("params", { down: 60, l0: 0.001 }),
   mix: recall("mix", 80), feather: recall("feather", 30), toldBrush: recall("toldBrush", false),
@@ -1007,9 +1009,10 @@ function render() {
   $("#knob").setAttribute("aria-valuenow", Math.round(S.split * 100));
   $("#tagL").hidden = m === "after"; $("#tagR").hidden = m === "before";
   const waiting = it.status === "running" ? " · 去噪中" : it.status === "queued" ? " · 排队中" : "";
-  $("#tagL").textContent = leftDen ? "未保护结果" : "原图" + (hasOut ? "" : waiting);
-  $("#tagR").textContent = it.hasMask ? "结果 · 含保护" : "结果";
-  const showMask = it.hasMask && !S.peekOrig && (S.peekMask || S.painting || (S.brushMode && S.eye));
+  const flipHint = hasOut && m !== "cmp" && !S.peekOrig ? " · X 切换" : "";
+  $("#tagL").textContent = leftDen ? "未保护结果" : "原图" + (hasOut ? flipHint : waiting);
+  $("#tagR").textContent = (it.hasMask ? "结果 · 含保护" : "结果") + flipHint;
+  const showMask = it.hasMask && !S.peekOrig && (S.peekMask || S.painting || S.flash || (S.brushMode && S.eyeMode === "always"));
   $("#Lm").classList.toggle("show", showMask);
   $("#baseSeg").hidden = !(hasOut && it.hasMask && m === "cmp");
   for (const b of $$("#baseSeg button")) b.classList.toggle("on", b.dataset.b === S.base);
@@ -1066,7 +1069,10 @@ function syncBrushUI() {
   $("#bFeather").value = it ? it.feather : S.feather; $("#bFeatherOut").textContent = (it ? it.feather : S.feather);
   for (const id of ["#bSize", "#bMix", "#bFeather"]) paintRange($(id));
   for (const b of $$("#brushbar [data-t]")) b.classList.toggle("on", b.dataset.t === S.tool);
-  $("#bEye").classList.toggle("on", S.eye);
+  const always = S.eyeMode === "always";
+  $("#bEye").classList.toggle("on", always);
+  $("#bEyeIcon").setAttribute("href", always ? "#i-eye" : "#i-eye-auto");
+  $("#bEye").title = always ? "一直显示涂抹范围（点击改成涂完自动隐藏）；按住 M 看全部涂抹" : "涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹";
   $("#brushCur").classList.toggle("erase", S.tool === "erase");
 }
 function setBrushMode(on, tool) {
@@ -1080,7 +1086,11 @@ function setBrushMode(on, tool) {
 $("#brushBtn").onclick = () => setBrushMode(!S.brushMode);
 $("#bDone").onclick = () => setBrushMode(false);
 $$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; syncBrushUI(); updateCursor(); });
-$("#bEye").onclick = () => { S.eye = !S.eye; syncBrushUI(); render(); };
+$("#bEye").onclick = () => {
+  S.eyeMode = S.eyeMode === "always" ? "auto" : "always"; store("eyeMode", S.eyeMode);
+  toast(S.eyeMode === "always" ? "涂抹范围：一直显示" : "涂抹范围：涂完自动隐藏（按住 M 看全部）", "", 2200);
+  syncBrushUI(); render();
+};
 $("#bSize").addEventListener("input", e => { S.brush = +e.target.value; store("brush", S.brush); syncBrushUI(); updateCursor(); });
 $("#bMix").addEventListener("input", e => { S.mix = +e.target.value; store("mix", S.mix); syncBrushUI(); syncPanel(); updateCursor(); });  // only affects new strokes
 $("#bFeather").addEventListener("input", e => { const it = S.cur; S.feather = +e.target.value; store("feather", S.feather); if (it) { it.feather = S.feather; scheduleComposite(); scheduleSave(it); } syncBrushUI(); syncPanel(); });
@@ -1128,8 +1138,13 @@ function endStroke() {
   S.painting = false; lastPt = null;
   const it = S.cur;
   it.hasMask = hasPixels(it);
+  if (S.eyeMode === "auto") {  // keep the tint a moment after lifting, then let it fade
+    S.flash = true; clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { S.flash = false; render(); }, 700);
+  }
   composite(); scheduleSave(it); syncPanel(); renderStrip();
 }
+let flashTimer = 0;
 
 /* ---------------- pointer ---------------- */
 let drag = null, cursorPt = null;
@@ -1197,6 +1212,7 @@ addEventListener("keydown", e => {
   const onRange = el.tagName === "INPUT";
   const act = {
     "1": () => { S.view = "cmp"; render(); }, "2": () => { S.view = "before"; render(); }, "3": () => { S.view = "after"; render(); },
+    x: () => { if (e.repeat || !S.cur.result) return; S.view = S.view === "after" ? "before" : "after"; render(); },
     z: () => { if (!e.repeat) { S.peekOrig = true; render(); } },
     m: () => { if (!e.repeat) { S.peekMask = true; render(); } },
     // B toggles: enter painting; in painting with the eraser -> back to brush; with the brush -> finish
