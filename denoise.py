@@ -145,9 +145,6 @@ def _upscale_whole(model, im, device):
     return Image.fromarray((y * 255 + 0.5).astype(np.uint8))
 
 
-SR_BYTES_PER_PIXEL = 15000  # measured: the x4 anime 6B model peaks near 8.7 GB for a 0.57 MP input
-
-
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".jfif", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif", ".tga")
 
 
@@ -192,45 +189,92 @@ def save_png(im, path, alpha=None, icc=None, **kw):
     im.save(path, "PNG", **kw)
 
 
-def _tile_size(im, device):
-    """Tile edge to use, or None when the whole image fits in free GPU memory.
+# Full FP32 convolutions: with cuDNN's default TF32, the rounding depends on the input shape and 92 stacked layers
+# amplify it (up to 3 levels vs the CPU result, 17 between band shapes). Without TF32 a banded pass equals a
+# whole-image pass exactly and the GPU matches the CPU to within 1 level, for ~0.1 s more per image.
+torch.backends.cudnn.allow_tf32 = False
 
-    Planning ahead matters on Windows: the NVIDIA driver spills into system RAM instead of raising
-    OutOfMemoryError, so an oversized whole-image pass just crawls for minutes.
-    """
-    if not str(device).startswith("cuda"):
+# Exact memory-bounded super-resolution. Not tiling with guessed borders: every band carries enough real
+# neighbour rows for the layers it runs, so each output pixel sees exactly the inputs a whole-image pass would.
+# Measured on a 614x922 input: the trunk peaks at 1.8 GB, the two 3x3 convs at 4x size peak at 8.7 GB (2.2 GB
+# input + 2.2 GB output + cuDNN workspace). So the trunk runs whole whenever it fits, the 4x tail runs in bands.
+HEAD_HALO = 96      # input rows: the trunk stacks ~92 3x3 convs (6 RRDB x 3 RDB x 5 + first/last conv)
+TAIL_HALO = 3       # input rows: the tail is 4 3x3 convs around two nearest 2x upsamples (needs 2)
+HEAD_BYTES = 3500   # per input pixel for the trunk (1.8 GB / 0.57 MP, plus headroom)
+TAIL_BYTES = 16000  # per input pixel of a tail band (64 channels at 4x: input + output + conv workspace)
+
+
+def _free_bytes(device):
+    if str(device).startswith("cuda"):
+        return torch.cuda.mem_get_info()[0]
+    try:
+        import psutil
+        return psutil.virtual_memory().available
+    except Exception:
+        return 4 << 30
+
+
+def _rrdb_split(model):
+    """(trunk, tail) of a plain RRDB ESRGAN, split at its first upsample; None for other architectures."""
+    seq = getattr(model, "model", None)
+    if getattr(model, "shuffle_factor", None) or not isinstance(seq, torch.nn.Sequential):
         return None
-    free, _ = torch.cuda.mem_get_info()
-    if im.width * im.height * SR_BYTES_PER_PIXEL < free * 0.8:
-        return None
-    side = int((free * 0.25 / SR_BYTES_PER_PIXEL) ** 0.5) - 64  # leave headroom: near-full VRAM is slow
-    return max(128, min(512, side))
+    ups = [i for i, m in enumerate(seq) if isinstance(m, torch.nn.Upsample)]
+    return (seq[:ups[0]], seq[ups[0]:]) if ups else None
 
 
-def upscale(model, im, device, tile=256, border=32, stop=None):
-    """Whole image at once when it fits; otherwise the same network over overlapping tiles."""
-    planned = _tile_size(im, device)
-    if planned:
-        tile = planned
-    else:
+def _bands(n, step, halo):
+    for r0 in range(0, n, step):
+        r1 = min(n, r0 + step)
+        yield r0, r1, max(0, r0 - halo), min(n, r1 + halo)
+
+
+def _run_bands(fn, n, budget, per_row, halo, stop):
+    """Call fn(r0, r1, a, b) over exact bands sized to the memory budget; on out-of-memory, halve and redo."""
+    rows = max(8, int(budget / max(per_row, 1)) - 2 * halo)
+    while True:
         try:
-            return _upscale_whole(model, im, device)
+            for r0, r1, a, b in _bands(n, rows, halo):
+                _check(stop)
+                fn(r0, r1, a, b)
+            return
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
+            if rows <= 8:
+                raise
+            rows = max(8, rows // 2)
+
+
+def upscale(model, im, device, stop=None):
+    """Super-resolve with the result of a single whole-image pass but bounded GPU memory / RAM (see above)."""
+    split = _rrdb_split(model)
+    if split is None:  # other models (APISR, CUGAN in --all): whole image
+        return _upscale_whole(model, im, device)
+    trunk, tail = split
     W, H = im.size
-    out, scale = None, None
-    for y in range(0, H, tile):
-        for x in range(0, W, tile):
-            _check(stop)
-            x2, y2 = min(x + tile, W), min(y + tile, H)
-            box = (max(0, x - border), max(0, y - border), min(W, x2 + border), min(H, y2 + border))
-            patch = _upscale_whole(model, im.crop(box), device)
-            if out is None:
-                scale = patch.width // (box[2] - box[0])
-                out = Image.new("RGB", (W * scale, H * scale))
-            out.paste(patch.crop(((x - box[0]) * scale, (y - box[1]) * scale,
-                                  (x2 - box[0]) * scale, (y2 - box[1]) * scale)), (x * scale, y * scale))
-    return out
+    x = torch.from_numpy(np.asarray(im, np.float32) / 255).permute(2, 0, 1)[None]
+    with torch.no_grad():
+        budget = _free_bytes(device) * 0.6
+        if H * W * HEAD_BYTES <= budget:
+            f = trunk(x.to(device))
+        else:  # very large image: trunk in exact bands, features gathered on the CPU
+            f = torch.empty((1, 64, H, W), dtype=torch.float32)
+            def head_band(r0, r1, a, b):
+                f[:, :, r0:r1] = trunk(x[:, :, a:b].to(device))[:, :, r0 - a:r1 - a].cpu()
+            _run_bands(head_band, H, budget, W * HEAD_BYTES, HEAD_HALO, stop)
+        out = {}
+        def tail_band(r0, r1, a, b):
+            y = tail(f[:, :, a:b].to(device)).clamp_(0, 1)
+            s = y.shape[2] // (b - a)
+            if "img" not in out:
+                out["img"] = np.empty((H * s, W * s, 3), np.uint8)
+            y = y[0, :, (r0 - a) * s:(r1 - a) * s].permute(1, 2, 0).cpu().numpy()
+            out["img"][r0 * s:r1 * s] = (y * 255 + 0.5).astype(np.uint8)
+        _run_bands(tail_band, H, _free_bytes(device) * 0.6, W * TAIL_BYTES, TAIL_HALO, stop)
+    del f
+    if str(device).startswith("cuda"):
+        torch.cuda.empty_cache()
+    return Image.fromarray(out["img"])
 
 
 def sr_at(model, src, device, stop=None):
