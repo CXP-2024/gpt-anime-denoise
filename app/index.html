@@ -281,6 +281,9 @@
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- mask is an opaque grey image (brightness = restore strength); this turns grey into alpha for blending -->
+  <filter id="sqrtA" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncA type="gamma" amplitude="1" exponent="0.5" offset="0"/></feComponentTransfer></filter>
+  <filter id="g2a" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0"/></filter>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.5c.7 4.9 2.7 7.4 7.9 8.5-5.2 1.1-7.2 3.6-7.9 8.5-.7-4.9-2.7-7.4-7.9-8.5 5.2-1.1 7.2-3.6 7.9-8.5z"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
@@ -405,7 +408,7 @@
         <div class="seg"><button data-t="brush" class="on" title="画笔（B）"><svg class="i"><use href="#i-brush"/></svg>画笔</button><button data-t="erase" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button></div>
         <span class="sep"></span>
         <label class="fb-field" title="画笔大小，按原图像素（按住空格 + 滚轮，或 [ ]）">大小<input type="range" id="bSize" min="2" max="300" step="1"><output class="num" id="bSizeOut"></output></label>
-        <label class="fb-field" title="涂过的地方混回原图的比例；100% 就是完全不动">恢复原图<input type="range" id="bMix" min="0" max="100" step="5"><output class="num" id="bMixOut"></output></label>
+        <label class="fb-field" title="接下来这几笔混回原图的比例（颜色越深越强）；画过的地方再画会改成新比例；100% 就是完全不动">恢复原图<input type="range" id="bMix" min="0" max="100" step="5"><output class="num" id="bMixOut"></output></label>
         <label class="fb-field" title="边缘渐变宽度；0 是硬边">柔边<input type="range" id="bFeather" min="0" max="150" step="2"><output class="num" id="bFeatherOut"></output></label>
         <span class="sep"></span>
         <button class="ib" id="bUndo" title="撤销（Ctrl+Z）"><svg class="i"><use href="#i-undo"/></svg></button>
@@ -511,7 +514,7 @@ const S = {
 let nextId = 1;
 const stage = $("#stage"), imgB = $("#imgB"), cvA = $("#cvA"), cvM = $("#cvM");
 const mk = () => document.createElement("canvas");
-const featherC = mk(), tmpC = mk(), dilC = mk();
+const featherC = mk(), tmpC = mk(), dilC = mk(), greyC = mk();
 const g2 = (c, read) => c.getContext("2d", read ? { willReadFrequently: true } : undefined);
 function fit2(c, w, h) { if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
 
@@ -600,8 +603,9 @@ async function addFiles(list, pasted) {
     const id = nextId++;
     const name = pasted || !f.name || f.name === "image.png" ? `粘贴的图片-${id}.png` : f.name;
     const mask = mk(); mask.width = w; mask.height = h;
+    { const mc = mask.getContext("2d", { willReadFrequently: true }); mc.fillStyle = "#000"; mc.fillRect(0, 0, w, h); }
     const it = { id, file: f, name, stem: name.replace(/\.[^.]+$/, ""), w, h, srcURL: url, srcImg: img, thumb: makeThumb(img),
-      params: { ...S.params }, mix: S.mix, feather: S.feather, result: null, status: "queued", err: "",
+      params: { ...S.params }, feather: S.feather, result: null, status: "queued", err: "",
       mask, hasMask: false, undo: [], redo: [], saved: "", saveTimer: 0 };
     S.items.push(it);
     first = first || it;
@@ -703,30 +707,37 @@ async function runItem(it) {
 /* ---------------- compositing ---------------- */
 function maskRGB() { return getComputedStyle(document.documentElement).getPropertyValue("--mask").trim() || "185, 71, 47"; }
 function buildFeather(it) {
-  fit2(featherC, it.w, it.h);
+  // it.mask is opaque grey: brightness = restore strength of each stroke (black = untouched)
+  fit2(featherC, it.w, it.h); fit2(greyC, it.w, it.h);
+  const gc = g2(greyC), f = it.feather;
+  gc.globalCompositeOperation = "source-over"; gc.fillStyle = "#000"; gc.fillRect(0, 0, it.w, it.h);
+  if (f > 0) {
+    // grow each stroke by r = f/2 keeping the brighter value where copies overlap (a grey "dilate"), then blur by r/2:
+    // weight stays ~98% of the stroke's strength at its edge for any width and fades to 0 about f px outside
+    const r = f / 2;
+    fit2(dilC, it.w, it.h);
+    const dc = g2(dilC);
+    dc.globalCompositeOperation = "source-over"; dc.drawImage(it.mask, 0, 0);
+    dc.globalCompositeOperation = "lighten";
+    for (const [k, n] of [[1 / 3, 8], [2 / 3, 12], [1, 16]])
+      for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / n + k; dc.drawImage(it.mask, Math.cos(a) * r * k, Math.sin(a) * r * k); }
+    dc.globalCompositeOperation = "source-over";
+    gc.filter = `blur(${r / 2}px)`; gc.drawImage(dilC, 0, 0); gc.filter = "none";
+    gc.globalCompositeOperation = "lighten";
+  }
+  gc.drawImage(it.mask, 0, 0);  // painted pixels: exactly their own strength
+  gc.globalCompositeOperation = "source-over";
   const fc = g2(featherC);
   fc.clearRect(0, 0, it.w, it.h);
-  const f = it.feather;
-  if (!(f > 0)) { fc.drawImage(it.mask, 0, 0); return; }
-  // grow the stroke by r = f/2 (union of shifted copies on three rings ~ a disc), then blur by r/2:
-  // the weight is ~98% at the painted edge for any stroke width and fades to 0 about f px outside it
-  const r = f / 2;
-  fit2(dilC, it.w, it.h);
-  const dc = g2(dilC);
-  dc.clearRect(0, 0, it.w, it.h);
-  dc.drawImage(it.mask, 0, 0);
-  for (const [k, n] of [[1 / 3, 8], [2 / 3, 12], [1, 16]])
-    for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / n + k; dc.drawImage(it.mask, Math.cos(a) * r * k, Math.sin(a) * r * k); }
-  fc.filter = `blur(${r / 2}px)`; fc.drawImage(dilC, 0, 0); fc.filter = "none";
-  fc.drawImage(it.mask, 0, 0);  // painted pixels: exactly full strength
+  fc.filter = "url(#g2a)"; fc.drawImage(greyC, 0, 0); fc.filter = "none";  // alpha = weight
 }
-// final pixels = denoised * (1 - mix*m) + original * mix*m, m = feathered mask
+// final pixels = denoised * (1 - m) + original * m, m = feathered mask weight (each stroke carries its own strength)
 function blendInto(it, out) {
   fit2(out, it.w, it.h);
   const oc = g2(out, it.hasAlpha);
   oc.clearRect(0, 0, it.w, it.h);
   if (!it.result) { oc.drawImage(it.srcImg, 0, 0); return; }
-  const k = it.hasMask ? it.mix / 100 : 0;
+  const k = it.hasMask ? 1 : 0;
   if (k > 0 && it.hasAlpha) {  // exact per-pixel blend so semi-transparent pixels keep the original alpha
     fit2(tmpC, it.w, it.h);
     const tc = g2(tmpC, true);
@@ -754,15 +765,15 @@ function blendInto(it, out) {
     oc.globalAlpha = k; oc.drawImage(tmpC, 0, 0); oc.globalAlpha = 1;
   }
 }
-// overlay = the feathered mask as a soft translucent tint (no outline)
+// overlay = the feathered weight as a soft tint (no outline): its depth shows each stroke's strength
 function drawOverlay(it) {
   fit2(cvM, it.w, it.h);
   const mc = g2(cvM);
   mc.globalCompositeOperation = "source-over"; mc.clearRect(0, 0, it.w, it.h);
   if (!it.hasMask) return;
-  mc.drawImage(featherC, 0, 0);
+  mc.filter = "url(#sqrtA)"; mc.drawImage(featherC, 0, 0); mc.filter = "none";  // display only: sqrt keeps weak strokes readable
   mc.globalCompositeOperation = "source-in";
-  mc.fillStyle = `rgba(${maskRGB()}, 0.45)`; mc.fillRect(0, 0, it.w, it.h);
+  mc.fillStyle = `rgba(${maskRGB()}, 0.6)`; mc.fillRect(0, 0, it.w, it.h);  // deeper tint = stronger restore
   mc.globalCompositeOperation = "source-over";
 }
 function composite() {
@@ -886,7 +897,7 @@ function syncPanel() {
   $("#protectPill").textContent = masked ? "使用中" : "未使用";
   $("#protectPill").className = "pill" + (masked ? " accent" : "");
   $("#protectSum").hidden = !masked;
-  if (masked) $("#protectSumText").textContent = `涂抹处恢复原图 ${it.mix}% · 柔边 ${it.feather} px`;
+  if (masked) $("#protectSumText").textContent = `已涂保护区 · 新笔画 ${S.mix}% · 柔边 ${it.feather} px`;
   const fn = $("#footNote");
   fn.textContent = "";
   if (it && it.saved) {
@@ -1047,7 +1058,7 @@ $("#knob").addEventListener("keydown", e => {
 function syncBrushUI() {
   const it = S.cur;
   $("#bSize").value = S.brush; $("#bSizeOut").textContent = S.brush;
-  $("#bMix").value = it ? it.mix : S.mix; $("#bMixOut").textContent = (it ? it.mix : S.mix) + "%";
+  $("#bMix").value = S.mix; $("#bMixOut").textContent = S.mix + "%";
   $("#bFeather").value = it ? it.feather : S.feather; $("#bFeatherOut").textContent = (it ? it.feather : S.feather);
   for (const id of ["#bSize", "#bMix", "#bFeather"]) paintRange($(id));
   for (const b of $$("#brushbar [data-t]")) b.classList.toggle("on", b.dataset.t === S.tool);
@@ -1067,7 +1078,7 @@ $("#bDone").onclick = () => setBrushMode(false);
 $$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; syncBrushUI(); updateCursor(); });
 $("#bEye").onclick = () => { S.eye = !S.eye; syncBrushUI(); render(); };
 $("#bSize").addEventListener("input", e => { S.brush = +e.target.value; store("brush", S.brush); syncBrushUI(); updateCursor(); });
-$("#bMix").addEventListener("input", e => { const it = S.cur; S.mix = +e.target.value; store("mix", S.mix); if (it) { it.mix = S.mix; scheduleComposite(); scheduleSave(it); } syncBrushUI(); syncPanel(); });
+$("#bMix").addEventListener("input", e => { S.mix = +e.target.value; store("mix", S.mix); syncBrushUI(); syncPanel(); updateCursor(); });  // only affects new strokes
 $("#bFeather").addEventListener("input", e => { const it = S.cur; S.feather = +e.target.value; store("feather", S.feather); if (it) { it.feather = S.feather; scheduleComposite(); scheduleSave(it); } syncBrushUI(); syncPanel(); });
 function snapshot(it) { return { data: g2(it.mask, true).getImageData(0, 0, it.w, it.h), has: it.hasMask }; }
 function pushUndo(it) { it.undo.push(snapshot(it)); if (it.undo.length > 20) it.undo.shift(); it.redo = []; }
@@ -1084,21 +1095,22 @@ $("#bUndo").onclick = undo; $("#bRedo").onclick = redo;
 function clearMask() {
   const it = S.cur;
   if (!it || !it.hasMask) return;
-  pushUndo(it); g2(it.mask, true).clearRect(0, 0, it.w, it.h); it.hasMask = false;
+  pushUndo(it); { const c = g2(it.mask, true); c.fillStyle = "#000"; c.fillRect(0, 0, it.w, it.h); } it.hasMask = false;
   composite(); scheduleSave(it); syncPanel(); renderStrip();
   toast("已清除保护区（Ctrl+Z 可撤销）");
 }
 $("#bClear").onclick = $("#clearMask").onclick = clearMask;
 function hasPixels(it) {
   const d = g2(it.mask, true).getImageData(0, 0, it.w, it.h).data;
-  for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+  for (let i = 0; i < d.length; i += 4) if (d[i]) return true;  // any non-black grey
   return false;
 }
 let lastPt = null, strokeTool = "brush";
 function strokeTo(pt) {
   const it = S.cur, c = g2(it.mask, true);
-  c.globalCompositeOperation = strokeTool === "erase" ? "destination-out" : "source-over";
-  c.strokeStyle = c.fillStyle = "#fff";
+  const v = strokeTool === "erase" ? 0 : Math.round(S.mix * 2.55);
+  c.globalCompositeOperation = "source-over";
+  c.strokeStyle = c.fillStyle = `rgb(${v},${v},${v})`;  // sets this stroke's strength; overlapping strokes replace, not stack
   c.lineWidth = S.brush; c.lineCap = c.lineJoin = "round";
   if (!lastPt) { c.beginPath(); c.arc(pt[0], pt[1], S.brush / 2, 0, Math.PI * 2); c.fill(); }
   else { c.beginPath(); c.moveTo(lastPt[0], lastPt[1]); c.lineTo(pt[0], pt[1]); c.stroke(); }
@@ -1126,6 +1138,7 @@ function updateCursor() {
   const d = S.brush * S.vp.s;
   b.hidden = false; b.style.width = b.style.height = d + "px";
   b.style.left = pt[0] + "px"; b.style.top = pt[1] + "px";
+  b.style.background = S.tool === "erase" ? "none" : `rgba(${maskRGB()}, ${(0.32 * S.mix / 100).toFixed(3)})`;
 }
 stage.addEventListener("contextmenu", e => e.preventDefault());
 stage.addEventListener("pointerdown", e => {
