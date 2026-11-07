@@ -14,7 +14,59 @@ Removes the fish-scale texture that OpenAI's GPT image models leave in anime and
 
 QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI 建模、AI 绘画等内容，主打 agent base（dsh、Codex、Claude Code）+ 本地模型。
 
-## 用法
+## 效果
+
+左边去噪前，右边默认方案去噪后。**请点开看原尺寸**，缩小后鳞纹看不出来。
+
+### 粉彩白底插画
+
+![furina before/after](examples/furina_before_after.webp)
+
+### 电影感宽幅场景
+
+![pool before/after](examples/pool_before_after.webp)
+
+### 番剧截帧质感
+
+![twins before/after](examples/twins_before_after.webp)
+
+这张缩小看不明显，**请注意看刘海部分**。下面是左边角色右眼和刘海的局部，最近邻放大 3 倍（无损，没有插值平滑）：去噪前刘海的发丝色块里布满细碎的鳞状起伏，去噪后变成干净的平涂，发丝线条和高光的位置不变。
+
+![twins bangs zoom](examples/twins_bangs_zoom.webp)
+
+### 八种方法对比
+
+每张都是原尺寸并排：原图、L0 0.0005、L0 0.001、APISR、CUGAN 缩 60%、CUGAN 缩 60% + L0、ESRGAN 缩 60%、**ESRGAN 缩 60% + L0（默认）**。用 `--all` 可以对自己的图生成同样的对比图，挑最合适的一种。
+
+![furina sheet](examples/furina_sheet.webp)
+![pool sheet](examples/pool_sheet.webp)
+![twins sheet](examples/twins_sheet.webp)
+
+## 图形界面
+
+不想敲命令的话，用本机网页工具（依赖和命令行版一样，见下面「命令行用法」的安装那一行）：
+
+```bash
+python denoise_app.py      # 自动在浏览器打开 http://127.0.0.1:7865/
+```
+
+Windows 上也可以双击 `去噪工具.bat`（默认用 PATH 里的 `pythonw`，需要时在文件里改成自己的 Python）。图片只在本机处理，不会上传。
+
+![GUI 滑动对比](examples/gui_compare.webp)
+
+- **拖进来就去噪**：拖入图片、点击选择或 Ctrl+V 粘贴，自动按默认方案处理，RTX 5080 上一张约 1 秒。
+- **滑动对比**：拖中间的分割线比较原图和结果；滚轮缩放，200% 以上按原像素显示不做平滑；拖动平移，双击适应画面，按住空格临时看原图。
+- **调参即时重跑**：预缩比例（10–100%）和 L0 强度（0–0.005）松手就重跑；只改 L0 时复用超分结果，约 0.3 秒。
+- **下载**：右边显示的就是下载的 PNG，尺寸和原图一样。
+
+![GUI 保护区域遮罩](examples/gui_mask.webp)
+
+- **保护区域（遮罩）**：腮红排线、细纹理、小字这类不想被抹平的地方，用画笔涂上（上图红色）。涂过的地方按比例混回原图，边缘自动柔化，实时生效，不用重跑模型。
+  - 原图占比默认 80%；拉到 100% 就是完全不动。边缘柔化 0–150 px，设成 0 是硬边。
+  - 「左边放：未加遮罩」可以直接对比加遮罩前后；红色默认只在画的时候显示，按住 M 临时查看。
+  - 快捷键：B 画笔、E 橡皮、V 浏览、`[` `]` 调画笔大小、Ctrl+Z 撤销。
+
+## 命令行用法
 
 ```bash
 pip install -r requirements.txt          # 先按 pytorch.org 装好对应 CUDA 的 torch
@@ -43,45 +95,6 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 - 有 NVIDIA 显卡时 L0 也在显卡上跑（torch.fft，双精度），输出和 CPU 版逐像素一样。显存不够时 L0 会自动退回 CPU。
 - 命令行每次启动要加载 Python 和 torch，单张总耗时约 5 秒；批量处理时只加载一次。
 - GPU 超分目前整图一次处理，这个尺寸峰值显存约 8.7 GB。显存不到 10 GB 的显卡处理大图可能爆显存，这时加 `--device cpu` 改用 CPU。
-
-## 图形界面
-
-```bash
-python denoise_app.py      # 在浏览器里打开 http://127.0.0.1:7865/，只在本机处理
-```
-
-- 拖入图片（或 Ctrl+V 粘贴）自动去噪，滑动对比原图和结果，滚轮缩放到像素级查看。
-- 预缩比例和 L0 强度松手就重跑：只改 L0 时复用超分结果，约 0.3 秒。
-- 「保护区域」画笔：涂过的地方按比例混回原图（默认原图 80%），边缘自动柔化；原图占比 100% 就是完全不动。
-- Windows 上可以双击 `去噪工具.bat`（默认用 PATH 里的 `pythonw`，需要时在文件里改成自己的 Python）。
-
-## 效果
-
-左边去噪前，右边默认方案去噪后。**请点开看原尺寸**，缩小后鳞纹看不出来。
-
-### 粉彩白底插画
-
-![furina before/after](examples/furina_before_after.webp)
-
-### 电影感宽幅场景
-
-![pool before/after](examples/pool_before_after.webp)
-
-### 番剧截帧质感
-
-![twins before/after](examples/twins_before_after.webp)
-
-这张缩小看不明显，**请注意看刘海部分**。下面是左边角色右眼和刘海的局部，最近邻放大 3 倍（无损，没有插值平滑）：去噪前刘海的发丝色块里布满细碎的鳞状起伏，去噪后变成干净的平涂，发丝线条和高光的位置不变。
-
-![twins bangs zoom](examples/twins_bangs_zoom.webp)
-
-### 八种方法对比
-
-每张都是原尺寸并排：原图、L0 0.0005、L0 0.001、APISR、CUGAN 缩 60%、CUGAN 缩 60% + L0、ESRGAN 缩 60%、**ESRGAN 缩 60% + L0（默认）**。用 `--all` 可以对自己的图生成同样的对比图，挑最合适的一种。
-
-![furina sheet](examples/furina_sheet.webp)
-![pool sheet](examples/pool_sheet.webp)
-![twins sheet](examples/twins_sheet.webp)
 
 ## 原理
 
