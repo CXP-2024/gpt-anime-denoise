@@ -505,18 +505,21 @@ const fmtL0 = v => (+v).toFixed(4).replace(/0+$/, "").replace(/\.$/, ".0");
 const same = (a, b) => a && b && a.down === b.down && Math.abs(a.l0 - b.l0) < 1e-9;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// brush settings start from these on every launch (user choice); changes last for the session
+const BRUSH_DEFAULTS = { brush: 14, mix: 90, feather: 10 };
 const S = {
   items: [], cur: null, queue: [], running: null, info: {},
   view: "cmp", base: "orig", split: 0.5, vp: null, lastFit: null,
-  brushMode: false, tool: "brush", eyeMode: recall("eyeMode", "auto"), flash: false, painting: false,
+  brushMode: false, tool: "brush", eyeMode: recall("eyeMode", "auto"), flash: false, painting: false, overlayWhich: "all", overlayFor: null,
   peekOrig: false, peekMask: false, space: false, spaceMode: "", sizeAt: null,
-  brush: recall("brush", 60), params: recall("params", { down: 60, l0: 0.001 }),
-  mix: recall("mix", 80), feather: recall("feather", 30), toldBrush: recall("toldBrush", false),
+  brush: BRUSH_DEFAULTS.brush, params: recall("params", { down: 60, l0: 0.001 }),
+  mix: BRUSH_DEFAULTS.mix, feather: BRUSH_DEFAULTS.feather, toldBrush: recall("toldBrush", false),
 };
 let nextId = 1;
 const stage = $("#stage"), imgB = $("#imgB"), cvA = $("#cvA"), cvM = $("#cvM");
 const mk = () => document.createElement("canvas");
 const featherC = mk(), tmpC = mk(), dilC = mk(), greyC = mk();
+const strokeC = mk(), strokeFeatherC = mk();  // the stroke being painted now, for its own tint
 const g2 = (c, read) => c.getContext("2d", read ? { willReadFrequently: true } : undefined);
 function fit2(c, w, h) { if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
 
@@ -712,31 +715,32 @@ async function runItem(it) {
 
 /* ---------------- compositing ---------------- */
 function maskRGB() { return getComputedStyle(document.documentElement).getPropertyValue("--mask").trim() || "185, 71, 47"; }
-function buildFeather(it) {
-  // it.mask is opaque grey: brightness = restore strength of each stroke (black = untouched)
-  fit2(featherC, it.w, it.h); fit2(greyC, it.w, it.h);
-  const gc = g2(greyC), f = it.feather;
-  gc.globalCompositeOperation = "source-over"; gc.fillStyle = "#000"; gc.fillRect(0, 0, it.w, it.h);
+function featherOf(src, w, h, f, out) {
+  // src is opaque grey: brightness = restore strength (black = untouched); out gets alpha = feathered weight
+  fit2(out, w, h); fit2(greyC, w, h);
+  const gc = g2(greyC);
+  gc.globalCompositeOperation = "source-over"; gc.fillStyle = "#000"; gc.fillRect(0, 0, w, h);
   if (f > 0) {
     // grow each stroke by r = f/2 keeping the brighter value where copies overlap (a grey "dilate"), then blur by r/2:
     // weight stays ~98% of the stroke's strength at its edge for any width and fades to 0 about f px outside
     const r = f / 2;
-    fit2(dilC, it.w, it.h);
+    fit2(dilC, w, h);
     const dc = g2(dilC);
-    dc.globalCompositeOperation = "source-over"; dc.drawImage(it.mask, 0, 0);
+    dc.globalCompositeOperation = "source-over"; dc.drawImage(src, 0, 0);
     dc.globalCompositeOperation = "lighten";
     for (const [k, n] of [[1 / 3, 8], [2 / 3, 12], [1, 16]])
-      for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / n + k; dc.drawImage(it.mask, Math.cos(a) * r * k, Math.sin(a) * r * k); }
+      for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / n + k; dc.drawImage(src, Math.cos(a) * r * k, Math.sin(a) * r * k); }
     dc.globalCompositeOperation = "source-over";
     gc.filter = `blur(${r / 2}px)`; gc.drawImage(dilC, 0, 0); gc.filter = "none";
     gc.globalCompositeOperation = "lighten";
   }
-  gc.drawImage(it.mask, 0, 0);  // painted pixels: exactly their own strength
+  gc.drawImage(src, 0, 0);  // painted pixels: exactly their own strength
   gc.globalCompositeOperation = "source-over";
-  const fc = g2(featherC);
-  fc.clearRect(0, 0, it.w, it.h);
-  fc.filter = "url(#g2a)"; fc.drawImage(greyC, 0, 0); fc.filter = "none";  // alpha = weight
+  const oc = g2(out);
+  oc.clearRect(0, 0, w, h);
+  oc.filter = "url(#g2a)"; oc.drawImage(greyC, 0, 0); oc.filter = "none";  // alpha = weight
 }
+function buildFeather(it) { featherOf(it.mask, it.w, it.h, it.feather, featherC); }
 // final pixels = denoised * (1 - m) + original * m, m = feathered mask weight (each stroke carries its own strength)
 function blendInto(it, out) {
   fit2(out, it.w, it.h);
@@ -772,12 +776,18 @@ function blendInto(it, out) {
   }
 }
 // overlay = the feathered weight as a soft tint (no outline): its depth shows each stroke's strength
-function drawOverlay(it) {
+function drawOverlay(it, which = S.overlayWhich || "all") {
   fit2(cvM, it.w, it.h);
   const mc = g2(cvM);
   mc.globalCompositeOperation = "source-over"; mc.clearRect(0, 0, it.w, it.h);
-  if (!it.hasMask) return;
-  mc.filter = "url(#sqrtA)"; mc.drawImage(featherC, 0, 0); mc.filter = "none";  // display only: sqrt keeps weak strokes readable
+  S.overlayWhich = which; S.overlayFor = it;
+  let src = featherC;
+  if (which === "stroke") {
+    if (strokeC.width !== it.w || strokeC.height !== it.h) return;
+    featherOf(strokeC, it.w, it.h, it.feather, strokeFeatherC);
+    src = strokeFeatherC;
+  } else if (!it.hasMask) return;
+  mc.filter = "url(#sqrtA)"; mc.drawImage(src, 0, 0); mc.filter = "none";  // display only: sqrt keeps weak strokes readable
   mc.globalCompositeOperation = "source-in";
   mc.fillStyle = `rgba(${maskRGB()}, 0.6)`; mc.fillRect(0, 0, it.w, it.h);  // deeper tint = stronger restore
   mc.globalCompositeOperation = "source-over";
@@ -787,7 +797,7 @@ function composite() {
   if (!it) return;
   buildFeather(it);
   blendInto(it, cvA);
-  drawOverlay(it);
+  drawOverlay(it, S.overlayWhich === "stroke" && (S.painting || S.flash) ? "stroke" : "all");
   render();
 }
 let rafPending = false;
@@ -1012,7 +1022,11 @@ function render() {
   const flipHint = hasOut && m !== "cmp" && !S.peekOrig ? " · X 切换" : "";
   $("#tagL").textContent = leftDen ? "未保护结果" : "原图" + (hasOut ? flipHint : waiting);
   $("#tagR").textContent = (it.hasMask ? "结果 · 含保护" : "结果") + flipHint;
-  const showMask = it.hasMask && !S.peekOrig && (S.peekMask || S.painting || S.flash || (S.brushMode && S.eyeMode === "always"));
+  const showAll = S.peekMask || (S.brushMode && S.eyeMode === "always") || (S.painting && strokeTool === "erase");
+  const showStroke = !showAll && (S.painting || S.flash) && strokeTool === "brush";
+  const tintWant = showAll ? "all" : showStroke ? "stroke" : null;
+  if (tintWant && (S.overlayWhich !== tintWant || S.overlayFor !== it)) drawOverlay(it, tintWant);
+  const showMask = !S.peekOrig && ((showAll && it.hasMask) || showStroke);
   $("#Lm").classList.toggle("show", showMask);
   $("#baseSeg").hidden = !(hasOut && it.hasMask && m === "cmp");
   for (const b of $$("#baseSeg button")) b.classList.toggle("on", b.dataset.b === S.base);
@@ -1025,7 +1039,7 @@ $("#zIn").onclick = () => zoomAt(1.25); $("#zOut").onclick = () => zoomAt(0.8);
 let sizeTipTimer = 0;
 function setBrushSize(v, showTip) {
   S.brush = Math.round(Math.min(300, Math.max(2, v)));
-  store("brush", S.brush); syncBrushUI(); updateCursor();
+  syncBrushUI(); updateCursor();
   const at = S.spaceMode === "size" ? S.sizeAt : cursorPt;
   if (showTip && at) {
     const tip = $("#sizeTip");
@@ -1091,9 +1105,9 @@ $("#bEye").onclick = () => {
   toast(S.eyeMode === "always" ? "涂抹范围：一直显示" : "涂抹范围：涂完自动隐藏（按住 M 看全部）", "", 2200);
   syncBrushUI(); render();
 };
-$("#bSize").addEventListener("input", e => { S.brush = +e.target.value; store("brush", S.brush); syncBrushUI(); updateCursor(); });
-$("#bMix").addEventListener("input", e => { S.mix = +e.target.value; store("mix", S.mix); syncBrushUI(); syncPanel(); updateCursor(); });  // only affects new strokes
-$("#bFeather").addEventListener("input", e => { const it = S.cur; S.feather = +e.target.value; store("feather", S.feather); if (it) { it.feather = S.feather; scheduleComposite(); scheduleSave(it); } syncBrushUI(); syncPanel(); });
+$("#bSize").addEventListener("input", e => { S.brush = +e.target.value; syncBrushUI(); updateCursor(); });
+$("#bMix").addEventListener("input", e => { S.mix = +e.target.value; syncBrushUI(); syncPanel(); updateCursor(); });  // only affects new strokes
+$("#bFeather").addEventListener("input", e => { const it = S.cur; S.feather = +e.target.value; if (it) { it.feather = S.feather; scheduleComposite(); scheduleSave(it); } syncBrushUI(); syncPanel(); });
 function snapshot(it) { return { data: g2(it.mask, true).getImageData(0, 0, it.w, it.h), has: it.hasMask }; }
 function pushUndo(it) { it.undo.push(snapshot(it)); if (it.undo.length > 20) it.undo.shift(); it.redo = []; }
 function restore(it, from, to) {
@@ -1126,8 +1140,12 @@ function strokeTo(pt) {
   c.globalCompositeOperation = "source-over";
   c.strokeStyle = c.fillStyle = `rgb(${v},${v},${v})`;  // sets this stroke's strength; overlapping strokes replace, not stack
   c.lineWidth = S.brush; c.lineCap = c.lineJoin = "round";
-  if (!lastPt) { c.beginPath(); c.arc(pt[0], pt[1], S.brush / 2, 0, Math.PI * 2); c.fill(); }
-  else { c.beginPath(); c.moveTo(lastPt[0], lastPt[1]); c.lineTo(pt[0], pt[1]); c.stroke(); }
+  const sc = g2(strokeC);  // same segment into the current-stroke canvas (only used for its tint)
+  sc.strokeStyle = sc.fillStyle = c.fillStyle; sc.lineWidth = S.brush; sc.lineCap = sc.lineJoin = "round";
+  for (const g of [c, sc]) {
+    if (!lastPt) { g.beginPath(); g.arc(pt[0], pt[1], S.brush / 2, 0, Math.PI * 2); g.fill(); }
+    else { g.beginPath(); g.moveTo(lastPt[0], lastPt[1]); g.lineTo(pt[0], pt[1]); g.stroke(); }
+  }
   c.globalCompositeOperation = "source-over";
   lastPt = pt;
   if (strokeTool === "brush") it.hasMask = true;
@@ -1138,7 +1156,7 @@ function endStroke() {
   S.painting = false; lastPt = null;
   const it = S.cur;
   it.hasMask = hasPixels(it);
-  if (S.eyeMode === "auto") {  // keep the tint a moment after lifting, then let it fade
+  if (S.eyeMode === "auto" && strokeTool === "brush") {  // keep this stroke's tint a moment after lifting, then fade
     S.flash = true; clearTimeout(flashTimer);
     flashTimer = setTimeout(() => { S.flash = false; render(); }, 700);
   }
@@ -1171,6 +1189,8 @@ stage.addEventListener("pointerdown", e => {
   else if (S.brushMode && (e.button === 0 || e.button === 2)) {
     strokeTool = e.button === 2 ? "erase" : S.tool;
     pushUndo(S.cur); S.painting = true; lastPt = null; drag = { t: "paint" };
+    fit2(strokeC, S.cur.w, S.cur.h); { const sc = g2(strokeC); sc.fillStyle = "#000"; sc.fillRect(0, 0, S.cur.w, S.cur.h); }
+    clearTimeout(flashTimer); S.flash = false;
     strokeTo(toImg(e, r)); render();
   } else if (e.button === 0) drag = { t: "pan", x: e.clientX, y: e.clientY };
   if (drag && drag.t === "pan") stage.classList.add("panning");
