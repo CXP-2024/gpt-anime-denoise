@@ -25,6 +25,7 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
   - [主要功能](#主要功能)
   - [局部保护笔刷](#局部保护笔刷)
   - [外观与快捷键](#外观与快捷键)
+- [一键安装依赖](#一键安装依赖)
 - [命令行用法](#命令行用法)
 - [原理](#原理)
   - [试过但效果不好的方法](#试过但效果不好的方法)
@@ -68,7 +69,7 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
 python denoise_app.py      # 自动在浏览器打开 http://127.0.0.1:7865/
 ```
 
-Windows 上也可以双击 `去噪工具.bat`（默认用 PATH 里的 `pythonw`，需要时在文件里改成自己的 Python）。图片只在本机处理，不会上传；结果自动存到 `outputs/`（可用环境变量 `ANIME_DENOISE_OUTPUT` 改位置）。
+Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOISE_PYTHON`、本文件夹的 `.venv`、`py` 启动器和 PATH 里的 Python，用第一个装好了依赖的；都没有就在窗口里运行一键安装（见下面「一键安装依赖」），装完自动打开。图片只在本机处理，不会上传；结果自动存到 `outputs/`（可用环境变量 `ANIME_DENOISE_OUTPUT` 改位置）。
 
 ![GUI 总览](examples/gui_compare.webp)
 
@@ -99,10 +100,27 @@ Windows 上也可以双击 `去噪工具.bat`（默认用 PATH 里的 `pythonw`�
 - **外观**：跟随系统 / 浅色 / 深色。
 - **快捷键**：`B` 开始 / 结束涂抹（橡皮状态下先切回画笔），`E` 橡皮，`Esc` 也能结束涂抹，按住空格转滚轮或 `[` `]` 调画笔大小，右键拖动擦除，按住空格拖动画面，`1` `2` `3` 切换视图，`X` 全屏原图 / 结果互切，`←` `→` 切换图片，`Ctrl+S` 下载，`Ctrl+Z` 撤销（加 Shift 重做），`?` 打开说明。
 
+## 一键安装依赖
+
+```bash
+python setup_env.py                      # 识别显卡，显示方案和下载量，确认后装到本文件夹的 .venv
+python setup_env.py --kind cpu           # 也可以手动指定：auto / cuda / rocm / cpu
+```
+
+只用 Python 标准库，装之前会先问。全部装在 `.venv`（和 AMD 需要的 `.denoise-tools`）里，不改系统，删掉这两个文件夹就是卸载。
+
+| 显卡 | 装什么 | 需要你准备的 |
+|---|---|---|
+| NVIDIA | CUDA 版 PyTorch，自动选驱动能跑的最新 CUDA 版本 | 只要显卡驱动，不用装 CUDA Toolkit（PyTorch 自带 CUDA 运行库） |
+| AMD（Windows） | AMD 官方的 ROCm 7.2.1 for Windows 版 PyTorch，支持 RX 7000 / 9000、Radeon PRO W7000、Ryzen AI Max | 较新的 AMD 驱动（AMD 为 7.2.1 指定 26.2.2）。这套只有 Python 3.12 的包，电脑上没有 3.12 时会用 uv 下一份独立的，不改 PATH 和注册表 |
+| 其他 | CPU 版 | — |
+
+装完会实际导入 torch 检查能不能用上显卡；驱动太旧时环境照样能用（CPU），并提示去更新驱动。
+
 ## 命令行用法
 
 ```bash
-pip install -r requirements.txt          # 先按 pytorch.org 装好对应 CUDA 的 torch
+pip install -r requirements.txt          # 先按 pytorch.org 装好对应 CUDA 的 torch（或用上面的 setup_env.py）
 python denoise.py image.png              # 默认方案，输出在 image_denoise/
 python denoise.py image.png --all        # 7 种候选 + 一张 4×2 对比图
 python denoise.py ./folder --out ./clean # 批量

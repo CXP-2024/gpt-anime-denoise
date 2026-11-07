@@ -2,3 +2,5 @@ __pycache__/
 *_denoise/
 *.pth
 outputs/
+.venv/
+.denoise-tools/
