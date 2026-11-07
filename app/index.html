@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anime Denoise</title>
+<style>
+  :root {
+    --bg: #f5f6f3; --panel: #ffffff; --line: #e6e8e3; --soft: #f2f4f0;
+    --text: #1c211e; --muted: #7b827d; --faint: #a3a9a4;
+    --accent: #2f6b4f; --accent-soft: #e7f0ea; --dark: #1f3a2d;
+    --radius: 14px;
+    --font: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+  button { font-family: inherit; font-size: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+  .app { display: grid; grid-template-rows: 88px 1fr; height: 100vh; }
+
+  header { background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 40px; gap: 16px; }
+  .logo { width: 50px; height: 50px; border-radius: 13px; background: var(--accent-soft); display: grid; place-items: center; }
+  .brand b { display: block; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
+  .brand span { color: var(--muted); font-size: 13px; letter-spacing: 1px; }
+  header .right { margin-left: auto; display: flex; align-items: center; gap: 36px; color: #4a524c; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: 2px; }
+  .linkbtn { color: #4a524c; }
+  .linkbtn:hover { color: var(--accent); }
+
+  .body { display: grid; grid-template-columns: 372px 1fr; min-height: 0; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 36px 32px 40px; }
+  .sec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .sec-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  .link { color: var(--accent); font-size: 13px; }
+  .link:hover { text-decoration: underline; }
+  .drop { border: 1.5px dashed #cfd4cd; border-radius: var(--radius); background: #fbfcfa; padding: 34px 16px 30px; text-align: center; cursor: pointer; transition: .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop p { margin: 14px 0 6px; font-size: 14px; }
+  .drop small { color: var(--faint); font-size: 12px; }
+  .file { margin-top: 18px; }
+  .file .name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+  .badge { font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--soft); color: var(--muted); }
+  .badge.custom { background: var(--accent-soft); color: var(--accent); }
+  .method { font-size: 26px; font-weight: 700; margin: 6px 0 10px; }
+  .desc { color: var(--muted); line-height: 1.75; margin: 0 0 20px; font-size: 13.5px; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; background: var(--soft); border-radius: var(--radius); padding: 16px 0; margin-bottom: 26px; }
+  .tile { padding: 0 16px; }
+  .tile + .tile { border-left: 1px solid #dfe3dd; }
+  .tile label { color: var(--muted); font-size: 12px; }
+  .tile div { font-size: 22px; font-weight: 600; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .num { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .num input { width: 80px; height: 38px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; font: inherit; color: var(--text); background: #fff; }
+  .num input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; margin: 8px 0 10px;
+    background: linear-gradient(var(--accent), var(--accent)) 0/var(--p, 50%) 100% no-repeat, #e2e6e0; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  .ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .note { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin: 10px 0 0; }
+  details { margin-top: 24px; }
+  summary { cursor: pointer; list-style: none; font-size: 14px; }
+  summary::before { content: "▸"; display: inline-block; width: 16px; color: var(--muted); transition: .15s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  details .inner { padding-top: 16px; }
+  .primary { width: 100%; height: 46px; border-radius: 11px; background: var(--dark); color: #fff; font-weight: 600; margin-top: 28px; }
+  .primary:hover { background: var(--accent); }
+  .primary[hidden] { display: none; }
+
+  main { display: flex; flex-direction: column; padding: 32px 36px 24px; min-width: 0; min-height: 0; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .seg { display: flex; background: #eceee9; border-radius: 12px; padding: 5px; }
+  .seg button { padding: 9px 18px; border-radius: 8px; color: #59615b; font-size: 13.5px; }
+  .seg button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .seg button:disabled { opacity: .45; cursor: default; }
+  .zoom { display: flex; align-items: center; gap: 22px; color: #4a524c; font-size: 13.5px; }
+  .zoom .pm { font-size: 20px; width: 24px; color: var(--muted); }
+  .zoom .pct { width: 44px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .stage { position: relative; flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; cursor: grab; user-select: none; touch-action: none;
+    background-color: #f0f2ee; background-image: linear-gradient(45deg, #e8ebe6 25%, transparent 25%, transparent 75%, #e8ebe6 75%), linear-gradient(45deg, #e8ebe6 25%, transparent 25%, transparent 75%, #e8ebe6 75%);
+    background-size: 24px 24px; background-position: 0 0, 12px 12px; }
+  .stage.panning { cursor: grabbing; }
+  .layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .layer img, .layer canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; }
+  .layer .px { image-rendering: pixelated; }
+  .chip { position: absolute; top: 18px; padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,.92); border: 1px solid var(--line); font-size: 12.5px; color: #4a524c; pointer-events: none; z-index: 3; }
+  .chip.l { left: 18px; } .chip.r { right: 18px; }
+  .divider { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(255,255,255,.95); box-shadow: 0 0 0 1px rgba(0,0,0,.06); z-index: 2; cursor: ew-resize; }
+  .divider::after { content: ""; position: absolute; inset: 0 -10px; }
+  .handle { position: absolute; top: 50%; left: 50%; width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; background: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18); display: grid; place-items: center; font-size: 15px; color: #333; letter-spacing: 2px; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); pointer-events: none; }
+  .empty b { display: block; font-size: 17px; color: #4a524c; font-weight: 600; margin: 14px 0 6px; }
+  .busy { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(245,246,243,.55); backdrop-filter: blur(2px); z-index: 5; }
+  .busy .card { background: #fff; border-radius: 14px; padding: 20px 28px; box-shadow: 0 8px 30px rgba(0,0,0,.08); display: flex; align-items: center; gap: 14px; }
+  .spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent); animation: r 0.9s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  .stage.over { outline: 2px dashed var(--accent); outline-offset: -8px; }
+
+  .foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; gap: 20px; }
+  .foot .hint { color: var(--faint); font-size: 12.5px; }
+  .foot .status { color: var(--muted); font-size: 12.5px; margin-top: 14px; font-variant-numeric: tabular-nums; }
+  .foot .status.err { color: #b4432f; }
+  .dl { height: 46px; padding: 0 22px; border-radius: 11px; background: var(--dark); color: #fff; font-weight: 600; display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+  .dl:hover { background: var(--accent); }
+  .dl:disabled { background: #c9cec8; cursor: default; }
+  .tools { display: flex; background: #eceee9; border-radius: 11px; padding: 4px; margin-bottom: 18px; }
+  .tools button { flex: 1; padding: 8px 0; border-radius: 8px; color: #59615b; font-size: 13px; }
+  .tools button.on { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .row .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .slim { margin-bottom: 4px; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; color: #4a524c; cursor: pointer; }
+  .check input { accent-color: var(--accent); width: 15px; height: 15px; }
+  .btns { display: flex; gap: 10px; margin-top: 14px; }
+  .ghost { flex: 1; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: #4a524c; font-size: 13px; }
+  .ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .ghost:disabled { opacity: .45; cursor: default; border-color: var(--line); color: #4a524c; }
+  .stage.paint { cursor: none; }
+  .brush { position: absolute; border: 1.5px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; z-index: 4; transform: translate(-50%, -50%); }
+  .brush.erase { border-style: dashed; }
+  #Lm { opacity: 0; transition: opacity .5s ease; }
+  #Lm.show { opacity: .42; transition: opacity .08s; }
+  .seg.small button { padding: 7px 12px; font-size: 12.5px; }
+  .tbleft { display: flex; align-items: center; gap: 14px; }
+  .tbleft .lbl { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .toolbar { flex-wrap: wrap; gap: 12px; }
+  .tbleft { flex-wrap: wrap; }
+  .seg button, .zoom button, .zoom span { white-space: nowrap; }
+  .ended { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; font-size: 16px; color: var(--muted); z-index: 99; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2c.6 4.6 2.6 7 7.6 8-5 1-7 3.4-7.6 8-.6-4.6-2.6-7-7.6-8 5-1 7-3.4 7.6-8z" fill="#2f6b4f"/></svg></div>
+    <div class="brand"><b>Anime Denoise</b><span>GPT 二次元图去鱼鳞纹</span></div>
+    <div class="right">
+      <span><i class="dot"></i>本机处理</span>
+      <button class="linkbtn" id="quit">结束工具</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside>
+      <div class="sec-head"><h3>图片</h3><button class="link" id="change" hidden>更换图片</button></div>
+      <div class="drop" id="drop">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#5b625d" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
+        <p>拖入图片，或点击选择</p>
+        <small>PNG · JPEG · WebP · BMP · 也可以 Ctrl+V 粘贴</small>
+      </div>
+      <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/bmp" hidden>
+      <div class="file" id="fileinfo" hidden><div class="name" id="fname"></div><div class="meta" id="fmeta"></div></div>
+
+      <hr>
+      <div class="sec-head"><h3>去噪方案</h3><span class="badge" id="badge">推荐参数</span></div>
+      <div class="method">ESRGAN + L0</div>
+      <p class="desc">先按预缩比例缩小，用动漫超分模型放回原尺寸，再用 L0 平滑把色块里细碎的鱼鳞纹压平。线条和五官位置不变。</p>
+      <div class="tiles">
+        <div class="tile"><label>预缩比例</label><div id="tDown">60%</div></div>
+        <div class="tile"><label>L0 强度</label><div id="tL0">0.001</div></div>
+      </div>
+
+      <div class="row"><span>预缩比例</span><span class="num"><input id="downN" type="number" min="10" max="100" step="5" value="60">%</span></div>
+      <input type="range" id="down" min="10" max="100" step="5" value="60">
+      <div class="ends"><span>10% · 去噪更强</span><span>100% · 保留更多细节</span></div>
+      <p class="note"><button class="link" id="resetDown">还原推荐 60%</button><br>比例越低，纹理去得越干净，细节也丢得越多；100% 不缩小，仍会过一遍模型和 L0。输出尺寸始终和原图一样。</p>
+
+      <details id="l0box">
+        <summary>调整 L0 强度</summary>
+        <div class="inner">
+          <div class="row"><span>L0 强度</span><span class="num"><input id="l0N" type="number" min="0" max="0.005" step="0.0001" value="0.001"></span></div>
+          <input type="range" id="l0" min="0" max="0.005" step="0.0001" value="0.001">
+          <div class="ends"><span>0 · 不做平滑</span><span>0.005 · 更平</span></div>
+          <p class="note"><button class="link" id="resetL0">还原推荐 0.001</button><br>纹理还残留就调大（0.0015–0.002）；腮红、淡阴影被抹平就调小（0.0005–0.0007）。0.01 会把腮红抹掉。</p>
+        </div>
+      </details>
+
+      <button class="primary" id="rerun" hidden>按新参数重新去噪</button>
+
+      <hr>
+      <div class="sec-head"><h3>保护区域（遮罩）</h3><span class="badge" id="mbadge">未使用</span></div>
+      <p class="desc">不想被抹得太平的地方（腮红、细纹理、小字）用画笔涂上，那里会按比例混回原图，边缘自动柔化，实时生效。</p>
+      <div class="tools" id="tools">
+        <button data-t="pan" class="on">浏览</button>
+        <button data-t="brush">画笔 B</button>
+        <button data-t="erase">橡皮 E</button>
+      </div>
+      <div class="row slim"><span>画笔大小</span><span class="val" id="vBrush">60 px</span></div>
+      <input type="range" id="brush" min="4" max="300" step="2" value="60">
+      <div class="row slim"><span>原图占比</span><span class="val" id="vMix">80%</span></div>
+      <input type="range" id="mix" min="0" max="100" step="5" value="80">
+      <div class="row slim"><span>边缘柔化</span><span class="val" id="vFeather">30 px</span></div>
+      <input type="range" id="feather" min="0" max="150" step="2" value="30">
+      <div class="row slim" style="margin-top:14px"><span>红色遮罩</span><span class="val">按住 M 临时显示</span></div>
+      <div class="tools" id="mshow">
+        <button data-v="paint" class="on">画的时候显示</button>
+        <button data-v="always">一直显示</button>
+        <button data-v="never">隐藏</button>
+      </div>
+      <div class="btns">
+        <button class="ghost" id="undo" disabled>撤销 Ctrl+Z</button>
+        <button class="ghost" id="clearMask" disabled>清除遮罩</button>
+      </div>
+      <p class="note">原图占比 100% = 涂满的地方完全保持原图，一个像素都不改；只有柔化过渡的边缘会渐变。要连边缘都不动，把边缘柔化调到 0。<br>画笔大小按原图像素算。<b>[</b> <b>]</b> 调画笔大小；画笔模式下右键拖动平移。</p>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <div class="tbleft">
+          <div class="seg" id="seg">
+            <button data-m="cmp" class="on">滑动对比</button>
+            <button data-m="before">原图</button>
+            <button data-m="after">去噪后</button>
+          </div>
+          <div id="leftPick" hidden style="display:flex;align-items:center;gap:8px">
+            <span class="lbl">左边放</span>
+            <div class="seg small" id="lseg">
+              <button data-l="orig" class="on">原图</button>
+              <button data-l="den">未加遮罩</button>
+            </div>
+          </div>
+        </div>
+        <div class="zoom">
+          <button class="pm" id="zout" title="缩小">−</button>
+          <button id="fit">适应画面</button>
+          <span class="pct" id="pct">—</span>
+          <button class="pm" id="zin" title="放大">+</button>
+        </div>
+      </div>
+
+      <div class="stage" id="stage">
+        <div class="layer" id="Lb"><img id="imgB" alt=""></div>
+        <div class="layer" id="La"><canvas id="cvA"></canvas></div>
+        <div class="layer" id="Lm"><canvas id="cvM"></canvas></div>
+        <div class="brush" id="brushCur" hidden></div>
+        <span class="chip l" id="chipL">原图</span><span class="chip r" id="chipR">去噪后</span>
+        <div class="divider" id="div"><div class="handle">‹ ›</div></div>
+        <div class="empty" id="empty"><div>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#9aa19b" stroke-width="1.3"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
+          <b>把图片拖到这里</b>放进来就自动开始去噪
+        </div></div>
+        <div class="busy" id="busy" hidden><div class="card"><div class="spin"></div><span id="busyText">去噪中…</span></div></div>
+      </div>
+
+      <div class="foot">
+        <div>
+          <div class="hint">滚轮缩放 · 拖动画面平移 · 双击适应画面 · 按住空格看原图 · 右边显示的就是最终下载的图</div>
+          <div class="status" id="status">等待图片</div>
+        </div>
+        <button class="dl" id="dl" disabled>下载去噪 PNG <span>↓</span></button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const REC = { down: 60, l0: 0.001 };
+let info = { device: "" };
+let file = null, srcURL = null, outURL = null, natW = 0, natH = 0;
+let done = null;            // params of the shown result
+let mode = "cmp", split = 0.5, view = null, peek = false, running = false;
+// mask: maskC = hard strokes (alpha), featherC = blurred copy; result = den * (1 - mix*m) + orig * mix*m
+let srcImg = null, denImg = null, tool = "pan", hasMask = false, undoStack = [];
+let maskShow = "paint", leftSrc = "orig", holdM = false;
+const mk = () => document.createElement("canvas");
+const maskC = mk(), featherC = mk(), tmpC = mk();
+const ctx = c => c.getContext("2d", { willReadFrequently: c === maskC });
+function setupCanvases() {
+  for (const c of [maskC, featherC, tmpC, $("cvA"), $("cvM")]) { c.width = natW; c.height = natH; }
+  hasMask = false; undoStack = []; syncMaskUI();
+}
+function mixVal() { return +$("mix").value / 100; }
+function composite() {
+  if (!natW) return;
+  const f = +$("feather").value;
+  const fc = ctx(featherC);
+  fc.clearRect(0, 0, natW, natH);
+  fc.filter = f > 0 ? `blur(${f / 2}px)` : "none";
+  fc.drawImage(maskC, 0, 0);
+  fc.filter = "none";
+  const mc = ctx($("cvM"));
+  mc.globalCompositeOperation = "source-over";
+  mc.clearRect(0, 0, natW, natH);
+  mc.drawImage(featherC, 0, 0);
+  mc.globalCompositeOperation = "source-in";
+  mc.fillStyle = "#e0483e"; mc.fillRect(0, 0, natW, natH);
+  mc.globalCompositeOperation = "source-over";
+  if (denImg) {
+    const ac = ctx($("cvA"));
+    ac.globalAlpha = 1; ac.globalCompositeOperation = "source-over";
+    ac.drawImage(denImg, 0, 0);
+    if (hasMask && mixVal() > 0) {
+      const tc = ctx(tmpC);
+      tc.globalCompositeOperation = "source-over";
+      tc.clearRect(0, 0, natW, natH);
+      tc.drawImage(srcImg, 0, 0);
+      tc.globalCompositeOperation = "destination-in";
+      tc.drawImage(featherC, 0, 0);
+      tc.globalCompositeOperation = "source-over";
+      ac.globalAlpha = mixVal();
+      ac.drawImage(tmpC, 0, 0);
+      ac.globalAlpha = 1;
+    }
+  }
+  render();
+}
+let rafPending = false;
+function scheduleComposite() { if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; composite(); }); } }
+function syncMaskUI() {
+  $("vBrush").textContent = $("brush").value + " px";
+  $("vMix").textContent = $("mix").value + "%";
+  $("vFeather").textContent = $("feather").value + " px";
+  paint("brush"); paint("mix"); paint("feather");
+  $("mbadge").textContent = hasMask ? `原图 ${$("mix").value}%` : "未使用";
+  $("mbadge").classList.toggle("custom", hasMask);
+  $("undo").disabled = !undoStack.length;
+  $("clearMask").disabled = !hasMask;
+  document.querySelectorAll("#tools button").forEach(b => b.classList.toggle("on", b.dataset.t === tool));
+  stage.classList.toggle("paint", tool !== "pan" && !!view);
+  $("brushCur").classList.toggle("erase", tool === "erase");
+}
+function pushUndo() {
+  undoStack.push({ data: ctx(maskC).getImageData(0, 0, natW, natH), has: hasMask });
+  if (undoStack.length > 12) undoStack.shift();
+}
+function undo() {
+  const u = undoStack.pop();
+  if (!u) return;
+  ctx(maskC).putImageData(u.data, 0, 0); hasMask = u.has;
+  syncMaskUI(); composite();
+}
+function setTool(t) { tool = t; syncMaskUI(); updateCursor(); }
+
+fetch("/api/info").then(r => r.json()).then(j => info = j).catch(() => {});
+
+// ---------- params ----------
+const fmtL0 = v => (+v).toFixed(4).replace(/0+$/, "").replace(/\.$/, ".0");
+function params() { return { down: +$("down").value, l0: +(+$("l0").value).toFixed(4) }; }
+function paint(range) { const r = $(range); r.style.setProperty("--p", ((r.value - r.min) / (r.max - r.min) * 100) + "%"); }
+function syncParams() {
+  const p = params();
+  $("tDown").textContent = p.down + "%";
+  $("tL0").textContent = fmtL0(p.l0);
+  const custom = p.down !== REC.down || Math.abs(p.l0 - REC.l0) > 1e-9;
+  $("badge").textContent = custom ? "自定义参数" : "推荐参数";
+  $("badge").classList.toggle("custom", custom);
+  paint("down"); paint("l0");
+  $("rerun").hidden = !(file && done && !running && (done.down !== p.down || Math.abs(done.l0 - p.l0) > 1e-9));
+}
+function bind(range, num, clamp) {
+  $(range).addEventListener("input", () => { $(num).value = range === "l0" ? fmtL0($(range).value) : $(range).value; syncParams(); });
+  $(num).addEventListener("change", () => { $(range).value = clamp(+$(num).value); $(num).value = range === "l0" ? fmtL0($(range).value) : $(range).value; syncParams(); });
+}
+bind("down", "downN", v => Math.min(100, Math.max(10, Math.round(v / 5) * 5 || 60)));
+bind("l0", "l0N", v => Math.min(0.005, Math.max(0, isFinite(v) ? v : 0.001)));
+$("resetDown").onclick = () => { $("down").value = $("downN").value = 60; syncParams(); };
+$("resetL0").onclick = () => { $("l0").value = 0.001; $("l0N").value = "0.001"; syncParams(); };
+$("rerun").onclick = () => run();
+// re-run automatically when a slider is released (GPU L0 + cached super-resolution make this ~0.5-2 s)
+let pendingRun = false;
+function autoRun() {
+  if (!file || !done) return;
+  const p = params();
+  if (done.down === p.down && Math.abs(done.l0 - p.l0) < 1e-9) return;
+  if (running) { pendingRun = true; return; }
+  run();
+}
+for (const id of ["down", "downN", "l0", "l0N"]) $(id).addEventListener("change", autoRun);
+syncParams();
+
+// ---------- loading ----------
+$("drop").onclick = $("change").onclick = () => $("file").click();
+$("file").onchange = e => e.target.files[0] && load(e.target.files[0]);
+["dragover", "dragenter"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); $("drop").classList.add("over"); $("stage").classList.add("over"); }));
+["dragleave", "drop"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); if (t === "drop" || !e.relatedTarget) { $("drop").classList.remove("over"); $("stage").classList.remove("over"); } }));
+document.addEventListener("drop", e => { const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/")); if (f) load(f); });
+document.addEventListener("paste", e => { const f = [...e.clipboardData.files].find(f => f.type.startsWith("image/")); if (f) load(f); });
+
+function load(f) {
+  if (running) return;
+  file = f; done = null;
+  if (srcURL) URL.revokeObjectURL(srcURL);
+  if (outURL) { URL.revokeObjectURL(outURL); outURL = null; }
+  srcURL = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = () => {
+    natW = im.naturalWidth; natH = im.naturalHeight;
+    srcImg = im; denImg = null;
+    $("imgB").src = srcURL;
+    setupCanvases();
+    $("fname").textContent = f.name || "粘贴的图片";
+    $("fmeta").textContent = `${natW} × ${natH} px`;
+    $("fileinfo").hidden = false; $("change").hidden = false; $("empty").hidden = true;
+    $("dl").disabled = true;
+    fit(); run();
+  };
+  im.onerror = () => setStatus("这个文件打不开，换一张 PNG / JPEG / WebP 试试。", true);
+  im.src = srcURL;
+}
+
+async function run() {
+  if (!file || running) return;
+  running = true; syncParams();
+  const p = params(), t0 = performance.now();
+  $("busyText").textContent = "去噪中…";
+  const tick = setInterval(() => {
+    const s = (performance.now() - t0) / 1000;
+    if (s > 0.35) $("busy").hidden = false;  // quick re-runs finish without the overlay flashing
+    $("busyText").textContent = `去噪中… ${s.toFixed(1)} 秒`;
+  }, 100);
+  setStatus(`处理中 · 预缩 ${p.down}% · L0 ${fmtL0(p.l0)}`);
+  try {
+    const r = await fetch(`/api/denoise?down=${p.down / 100}&l0=${p.l0}`, { method: "POST", body: file });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const blob = await r.blob();
+    if (outURL) URL.revokeObjectURL(outURL);
+    outURL = URL.createObjectURL(blob);
+    const d = new Image();
+    await new Promise((res, rej) => { d.onload = res; d.onerror = () => rej(new Error("结果图读取失败")); d.src = outURL; });
+    denImg = d; done = p;
+    const reused = r.headers.get("X-SR-Cached") === "1" ? " · 复用超分" : "";
+    setStatus(`已完成 · ${r.headers.get("X-Elapsed")} 秒${reused} · ${r.headers.get("X-Device")} · 预缩 ${p.down}% · L0 ${fmtL0(p.l0)}`);
+    composite();
+    $("dl").disabled = false;
+  } catch (err) {
+    setStatus("去噪失败：" + err.message + "（工具已结束的话，重新双击启动）", true);
+  } finally {
+    clearInterval(tick); $("busy").hidden = true; running = false; syncParams(); render();
+    if (pendingRun) { pendingRun = false; autoRun(); }
+  }
+}
+function setStatus(t, err) { $("status").textContent = t; $("status").classList.toggle("err", !!err); }
+
+$("dl").onclick = () => {
+  if (!denImg) return;
+  const stem = (file.name || "image").replace(/\.[^.]+$/, "");
+  const p = done;
+  let tag = p.down === REC.down && Math.abs(p.l0 - REC.l0) < 1e-9 ? "" : `_down${p.down}_l0-${fmtL0(p.l0)}`;
+  if (hasMask) tag += `_mask${$("mix").value}`;
+  composite();
+  $("cvA").toBlob(b => {
+    const a = document.createElement("a"), u = URL.createObjectURL(b);
+    a.href = u; a.download = `${stem}_denoise${tag}.png`; a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 5000);
+  }, "image/png");
+};
+
+// ---------- view ----------
+const stage = $("stage");
+function fit() {
+  if (!natW) return;
+  const W = stage.clientWidth, H = stage.clientHeight, pad = 0.94;
+  const s = Math.min(W / natW, H / natH) * pad;
+  view = { s, x: (W - natW * s) / 2, y: (H - natH * s) / 2 };
+  lastFit = { ...view };
+  render();
+}
+function zoomAt(f, cx, cy) {
+  if (!view) return;
+  cx ??= stage.clientWidth / 2; cy ??= stage.clientHeight / 2;
+  const s = Math.min(16, Math.max(0.05, view.s * f));
+  view.x = cx - (cx - view.x) * s / view.s; view.y = cy - (cy - view.y) * s / view.s; view.s = s;
+  render();
+}
+function render() {
+  const has = !!view, hasOut = !!done && !!denImg;
+  const W = stage.clientWidth;
+  const painting = !!drag && drag.t === "paint";
+  $("Lm").style.display = has && hasMask ? "" : "none";
+  $("Lm").classList.toggle("show", !peek && (holdM || maskShow === "always" || (maskShow === "paint" && painting)));
+  $("leftPick").hidden = !(hasOut && hasMask);
+  for (const id of ["cvA", "imgB", "cvM"]) {
+    const im = $(id);
+    im.style.display = has ? "" : "none";
+    if (!has) continue;
+    im.style.width = natW + "px"; im.style.height = natH + "px";
+    im.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
+    im.classList.toggle("px", view.s >= 2);
+  }
+  const m = peek ? "before" : (hasOut ? mode : "before");
+  $("La").style.display = m === "before" || !hasOut ? "none" : "";
+  $("La").style.clipPath = m === "cmp" ? `inset(0 0 0 ${split * W}px)` : "none";
+  $("Lb").style.display = m === "after" ? "none" : "";
+  $("div").style.display = m === "cmp" && has ? "" : "none";
+  $("div").style.left = split * 100 + "%";
+  $("chipL").style.display = has && m !== "after" ? "" : "none";
+  $("chipR").style.display = has && m !== "before" ? "" : "none";
+  const leftDen = m === "cmp" && hasOut && hasMask && leftSrc === "den";
+  const want = leftDen ? outURL : srcURL;
+  if (want && $("imgB").getAttribute("src") !== want) $("imgB").src = want;
+  $("chipL").textContent = leftDen ? "未加遮罩" : (m === "before" && !hasOut && running ? "原图 · 处理中" : "原图");
+  $("chipR").textContent = hasMask ? "去噪 + 遮罩" : "去噪后";
+  $("pct").textContent = has ? Math.round(view.s * 100) + "%" : "—";
+  document.querySelectorAll("#seg button").forEach(b => { b.classList.toggle("on", b.dataset.m === mode); b.disabled = !hasOut && b.dataset.m !== "before"; });
+}
+document.querySelectorAll("#seg button").forEach(b => b.onclick = () => { mode = b.dataset.m; render(); });
+$("fit").onclick = fit; $("zin").onclick = () => zoomAt(1.25); $("zout").onclick = () => zoomAt(0.8);
+stage.addEventListener("wheel", e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+stage.addEventListener("dblclick", fit);
+let drag = null, lastPt = null, cursorPt = null;
+const toImg = (e, r) => [(e.clientX - r.left - view.x) / view.s, (e.clientY - r.top - view.y) / view.s];
+function strokeTo(pt) {
+  const c = ctx(maskC);
+  c.globalCompositeOperation = tool === "erase" ? "destination-out" : "source-over";
+  c.strokeStyle = c.fillStyle = "#fff";
+  c.lineWidth = +$("brush").value; c.lineCap = c.lineJoin = "round";
+  if (!lastPt) { c.beginPath(); c.arc(pt[0], pt[1], c.lineWidth / 2, 0, Math.PI * 2); c.fill(); }
+  else { c.beginPath(); c.moveTo(lastPt[0], lastPt[1]); c.lineTo(pt[0], pt[1]); c.stroke(); }
+  c.globalCompositeOperation = "source-over";
+  lastPt = pt;
+  if (tool === "brush") hasMask = true;
+  scheduleComposite();
+}
+function updateCursor() {
+  const b = $("brushCur");
+  if (tool === "pan" || !view || !cursorPt) { b.hidden = true; return; }
+  const d = +$("brush").value * view.s;
+  b.hidden = false; b.style.width = b.style.height = d + "px";
+  b.style.left = cursorPt[0] + "px"; b.style.top = cursorPt[1] + "px";
+}
+stage.addEventListener("contextmenu", e => e.preventDefault());
+stage.addEventListener("pointerdown", e => {
+  if (!view) return;
+  const r = stage.getBoundingClientRect();
+  const onDiv = $("div").style.display !== "none" && Math.abs(e.clientX - r.left - split * r.width) < 16;
+  stage.setPointerCapture(e.pointerId);
+  if (onDiv && e.button === 0) drag = { t: "split" };
+  else if (tool !== "pan" && e.button === 0) { pushUndo(); lastPt = null; drag = { t: "paint" }; strokeTo(toImg(e, r)); syncMaskUI(); }
+  else { drag = { t: "pan", x: e.clientX, y: e.clientY }; stage.classList.add("panning"); }
+});
+stage.addEventListener("pointermove", e => {
+  const r = stage.getBoundingClientRect();
+  cursorPt = [e.clientX - r.left, e.clientY - r.top]; updateCursor();
+  if (!drag) return;
+  if (drag.t === "split") split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  else if (drag.t === "paint") return strokeTo(toImg(e, r));
+  else { view.x += e.clientX - drag.x; view.y += e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; }
+  render();
+});
+stage.addEventListener("pointerup", () => {
+  if (drag && drag.t === "paint") { lastPt = null; hasMask = maskHasPixels(); syncMaskUI(); composite(); }
+  drag = null; stage.classList.remove("panning");
+  render();
+});
+stage.addEventListener("pointerleave", () => { cursorPt = null; updateCursor(); });
+function maskHasPixels() {
+  const d = ctx(maskC).getImageData(0, 0, natW, natH).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+  return false;
+}
+document.querySelectorAll("#tools button").forEach(b => b.onclick = () => setTool(b.dataset.t));
+for (const id of ["brush", "mix", "feather"]) $(id).addEventListener("input", () => { syncMaskUI(); updateCursor(); if (id !== "brush") scheduleComposite(); });
+document.querySelectorAll("#mshow button").forEach(b => b.onclick = () => {
+  maskShow = b.dataset.v;
+  document.querySelectorAll("#mshow button").forEach(x => x.classList.toggle("on", x === b));
+  render();
+});
+document.querySelectorAll("#lseg button").forEach(b => b.onclick = () => {
+  leftSrc = b.dataset.l;
+  document.querySelectorAll("#lseg button").forEach(x => x.classList.toggle("on", x === b));
+  render();
+});
+addEventListener("keydown", e => { if ((e.key === "m" || e.key === "M") && !e.repeat && e.target.tagName !== "INPUT") { holdM = true; render(); } });
+addEventListener("keyup", e => { if (e.key === "m" || e.key === "M") { holdM = false; render(); } });
+$("undo").onclick = undo;
+$("clearMask").onclick = () => { pushUndo(); ctx(maskC).clearRect(0, 0, natW, natH); hasMask = false; syncMaskUI(); composite(); };
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
+  else if (e.key === "b" || e.key === "B") setTool("brush");
+  else if (e.key === "e" || e.key === "E") setTool("erase");
+  else if (e.key === "v" && !e.ctrlKey) setTool("pan");
+  else if (e.key === "[" || e.key === "]") {
+    const r = $("brush"); r.value = Math.min(300, Math.max(4, +r.value * (e.key === "]" ? 1.2 : 1 / 1.2)));
+    syncMaskUI(); updateCursor();
+  }
+});
+syncMaskUI();
+addEventListener("keydown", e => { if (e.code === "Space" && !e.repeat && e.target.tagName !== "INPUT") { e.preventDefault(); peek = true; render(); } });
+addEventListener("keyup", e => { if (e.code === "Space") { peek = false; render(); } });
+let lastFit = null;
+new ResizeObserver(() => {
+  if (!view) return;
+  const fitted = lastFit && Math.abs(view.s - lastFit.s) < 1e-9 && Math.abs(view.x - lastFit.x) < 0.5 && Math.abs(view.y - lastFit.y) < 0.5;
+  fitted ? fit() : render();
+}).observe(stage);
+render();
+
+$("quit").onclick = async () => {
+  if (!confirm("结束去噪工具？之后要再用就重新双击启动。")) return;
+  await fetch("/api/quit", { method: "POST" }).catch(() => {});
+  const d = document.createElement("div"); d.className = "ended"; d.textContent = "去噪工具已结束，可以关闭这个页面了。"; document.body.appendChild(d);
+};
+</script>
+</body>
+</html>
