@@ -511,7 +511,7 @@ const S = {
 let nextId = 1;
 const stage = $("#stage"), imgB = $("#imgB"), cvA = $("#cvA"), cvM = $("#cvM");
 const mk = () => document.createElement("canvas");
-const featherC = mk(), tmpC = mk();
+const featherC = mk(), tmpC = mk(), dilC = mk();
 const g2 = (c, read) => c.getContext("2d", read ? { willReadFrequently: true } : undefined);
 function fit2(c, w, h) { if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
 
@@ -706,11 +706,19 @@ function buildFeather(it) {
   fit2(featherC, it.w, it.h);
   const fc = g2(featherC);
   fc.clearRect(0, 0, it.w, it.h);
-  fc.filter = it.feather > 0 ? `blur(${it.feather / 2}px)` : "none";
-  fc.drawImage(it.mask, 0, 0);
-  fc.filter = "none";
-  // painted pixels stay at full strength; the feather only fades outward from the stroke
-  if (it.feather > 0) fc.drawImage(it.mask, 0, 0);
+  const f = it.feather;
+  if (!(f > 0)) { fc.drawImage(it.mask, 0, 0); return; }
+  // grow the stroke by r = f/2 (union of shifted copies on three rings ~ a disc), then blur by r/2:
+  // the weight is ~98% at the painted edge for any stroke width and fades to 0 about f px outside it
+  const r = f / 2;
+  fit2(dilC, it.w, it.h);
+  const dc = g2(dilC);
+  dc.clearRect(0, 0, it.w, it.h);
+  dc.drawImage(it.mask, 0, 0);
+  for (const [k, n] of [[1 / 3, 8], [2 / 3, 12], [1, 16]])
+    for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / n + k; dc.drawImage(it.mask, Math.cos(a) * r * k, Math.sin(a) * r * k); }
+  fc.filter = `blur(${r / 2}px)`; fc.drawImage(dilC, 0, 0); fc.filter = "none";
+  fc.drawImage(it.mask, 0, 0);  // painted pixels: exactly full strength
 }
 // final pixels = denoised * (1 - mix*m) + original * mix*m, m = feathered mask
 function blendInto(it, out) {
