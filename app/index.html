@@ -121,7 +121,7 @@
   .brush { position: absolute; border: 1.5px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; z-index: 4; transform: translate(-50%, -50%); }
   .brush.erase { border-style: dashed; }
   #Lm { opacity: 0; transition: opacity .5s ease; }
-  #Lm.show { opacity: .55; transition: opacity .08s; }
+  #Lm.show { opacity: 1; transition: opacity .08s; }
   .seg.small button { padding: 7px 12px; font-size: 12.5px; }
   .tbleft { display: flex; align-items: center; gap: 14px; }
   .tbleft .lbl { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
@@ -132,6 +132,11 @@
 </style>
 </head>
 <body>
+<!-- alpha band filters: turn a slightly blurred mask into a thin outline (dark outside, white inside) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="bandDark"><feComponentTransfer><feFuncA type="discrete" tableValues="0 1 1 1 0 0 0 0 0 0"/></feComponentTransfer></filter>
+  <filter id="bandLight"><feComponentTransfer><feFuncA type="discrete" tableValues="0 0 0 0 1 1 1 0 0 0"/></feComponentTransfer></filter>
+</svg>
 <div class="app">
   <header>
     <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2c.6 4.6 2.6 7 7.6 8-5 1-7 3.4-7.6 8-.6-4.6-2.6-7-7.6-8 5-1 7-3.4 7.6-8z" fill="#2f6b4f"/></svg></div>
@@ -266,10 +271,10 @@ let mode = "cmp", split = 0.5, view = null, peek = false, running = false;
 let srcImg = null, denImg = null, tool = "pan", hasMask = false, undoStack = [];
 let maskShow = "paint", leftSrc = "orig", holdM = false;
 const mk = () => document.createElement("canvas");
-const maskC = mk(), featherC = mk(), tmpC = mk();
+const maskC = mk(), featherC = mk(), tmpC = mk(), edgeC = mk(), ringC = mk();
 const ctx = c => c.getContext("2d", { willReadFrequently: c === maskC });
 function setupCanvases() {
-  for (const c of [maskC, featherC, tmpC, $("cvA"), $("cvM")]) { c.width = natW; c.height = natH; }
+  for (const c of [maskC, featherC, tmpC, edgeC, ringC, $("cvA"), $("cvM")]) { c.width = natW; c.height = natH; }
   hasMask = false; undoStack = []; syncMaskUI();
 }
 function mixVal() { return +$("mix").value / 100; }
@@ -281,13 +286,26 @@ function composite() {
   fc.filter = f > 0 ? `blur(${f / 2}px)` : "none";
   fc.drawImage(maskC, 0, 0);
   fc.filter = "none";
+  // overlay = translucent red fill + a dark/white outline, so it reads on any colour (also pink blush)
   const mc = ctx($("cvM"));
   mc.globalCompositeOperation = "source-over";
   mc.clearRect(0, 0, natW, natH);
   mc.drawImage(featherC, 0, 0);
   mc.globalCompositeOperation = "source-in";
-  mc.fillStyle = "#e0483e"; mc.fillRect(0, 0, natW, natH);
+  mc.fillStyle = "rgba(224,72,62,0.5)"; mc.fillRect(0, 0, natW, natH);
   mc.globalCompositeOperation = "source-over";
+  const ec = ctx(edgeC), rc = ctx(ringC);
+  ec.clearRect(0, 0, natW, natH);
+  ec.filter = "blur(2px)"; ec.drawImage(maskC, 0, 0); ec.filter = "none";
+  for (const [id, col] of [["bandDark", "rgba(0,0,0,0.75)"], ["bandLight", "#fff"]]) {
+    rc.globalCompositeOperation = "source-over";
+    rc.clearRect(0, 0, natW, natH);
+    rc.filter = `url(#${id})`; rc.drawImage(edgeC, 0, 0); rc.filter = "none";
+    rc.globalCompositeOperation = "source-in";
+    rc.fillStyle = col; rc.fillRect(0, 0, natW, natH);
+    mc.drawImage(ringC, 0, 0);
+  }
+  rc.globalCompositeOperation = "source-over";
   if (denImg) {
     const ac = ctx($("cvA"));
     ac.globalAlpha = 1; ac.globalCompositeOperation = "source-over";
