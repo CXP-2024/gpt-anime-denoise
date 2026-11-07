@@ -416,7 +416,7 @@
         <button class="ib on" id="bEye" title="显示涂抹范围（M）"><svg class="i"><use href="#i-eye"/></svg></button>
         <button class="ib" id="bClear" title="清除全部（可撤销）"><svg class="i"><use href="#i-trash"/></svg></button>
         <span class="saved" id="bSaved"></span>
-        <button class="done-btn" id="bDone" title="完成涂抹（Esc）">完成</button>
+        <button class="done-btn" id="bDone" title="完成涂抹（B 或 Esc）">完成</button>
       </div>
       <div class="tip" id="brushTip" hidden>涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · M 看范围</div>
 
@@ -459,9 +459,9 @@
     <h4>快捷键</h4>
     <div class="keys">
       <div><span>添加 / 粘贴图片</span><span><kbd>Ctrl</kbd><kbd>O</kbd> <kbd>Ctrl</kbd><kbd>V</kbd></span></div>
-      <div><span>画笔 / 橡皮</span><span><kbd>B</kbd> <kbd>E</kbd></span></div>
+      <div><span>开始涂抹 / 橡皮</span><span><kbd>B</kbd> <kbd>E</kbd></span></div>
       <div><span>上一张 / 下一张</span><span><kbd>←</kbd> <kbd>→</kbd></span></div>
-      <div><span>结束涂抹</span><span><kbd>Esc</kbd></span></div>
+      <div><span>结束涂抹</span><span><kbd>B</kbd> <kbd>Esc</kbd></span></div>
       <div><span>对比 / 原图 / 结果</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span></div>
       <div><span>画笔大小</span><span><kbd>空格</kbd>+滚轮 <kbd>[</kbd> <kbd>]</kbd></span></div>
       <div><span>按住暂时看原图</span><span><kbd>Z</kbd></span></div>
@@ -892,7 +892,7 @@ function syncPanel() {
   $("#brushBtn").disabled = !it;
   $("#brushBtn").classList.toggle("on", S.brushMode);
   $("#brushBtnText").textContent = S.brushMode ? "完成涂抹" : "保护笔刷";
-  $("#brushKbd").textContent = S.brushMode ? "Esc" : "B";
+  $("#brushKbd").textContent = "B";
   const masked = !!(it && it.hasMask);
   $("#protectPill").textContent = masked ? "使用中" : "未使用";
   $("#protectPill").className = "pill" + (masked ? " accent" : "");
@@ -1195,7 +1195,9 @@ addEventListener("keydown", e => {
     "1": () => { S.view = "cmp"; render(); }, "2": () => { S.view = "before"; render(); }, "3": () => { S.view = "after"; render(); },
     z: () => { if (!e.repeat) { S.peekOrig = true; render(); } },
     m: () => { if (!e.repeat) { S.peekMask = true; render(); } },
-    b: () => setBrushMode(true, "brush"), e: () => setBrushMode(true, "erase"),
+    // B toggles: enter painting; in painting with the eraser -> back to brush; with the brush -> finish
+    b: () => { if (e.repeat) return; if (!S.brushMode) setBrushMode(true, "brush"); else if (S.tool === "erase") { S.tool = "brush"; syncBrushUI(); updateCursor(); } else setBrushMode(false); },
+    e: () => setBrushMode(true, "erase"),
     escape: () => setBrushMode(false),
     "[": () => setBrushSize(Math.min(S.brush - 1, S.brush / 1.2), true),
     "]": () => setBrushSize(Math.max(S.brush + 1, S.brush * 1.2), true),
