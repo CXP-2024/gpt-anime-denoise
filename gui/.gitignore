@@ -1,0 +1,6 @@
+# runtime data created by the GUI
+.data/
+outputs/
+models/
+.venv/
+*.tmp
