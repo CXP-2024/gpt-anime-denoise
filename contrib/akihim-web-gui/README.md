@@ -1,5 +1,7 @@
 # 图形界面（GUI）
 
+> 这是 [@AkihiM](https://github.com/AkihiM) 在 [PR #1](https://github.com/CXP-2024/gpt-anime-denoise/pull/1) 里提交的第一版网页界面，原样保留在这里（只改了目录位置）。仓库主界面是根目录的 `denoise_app.py`，它借鉴了这里的很多设计。
+
 不想敲命令？用这个本机网页界面：拖进图片 → 点「开始去噪」→ 左右拖动对比 → 下载。
 用的就是仓库里的 `denoise.py` 默认方案（ESRGAN 缩 60% + L0），处理全部在你自己的电脑上完成，不会上传任何图片。
 
@@ -14,13 +16,13 @@
    ```
 
 2. 启动界面：
-   - **Windows**：双击 `gui/start.bat`。
-   - **其他系统**：运行 `python gui/server.py`。
+   - **Windows**：双击 `contrib/akihim-web-gui/start.bat`。
+   - **其他系统**：运行 `python contrib/akihim-web-gui/server.py`。
 
    浏览器会自动打开界面。GUI 本身只用 Python 标准库，不需要额外安装东西。
 
 第一次去噪时会自动下载模型（约 18 MB，和命令行版共用 `~/.cache/gpt-anime-denoise`）。
-如果 `gui/models/` 里已经放了 `RealESRGAN_x4plus_anime_6B.pth`，就直接用那份。
+如果 `contrib/akihim-web-gui/models/` 里已经放了 `RealESRGAN_x4plus_anime_6B.pth`，就直接用那份。
 
 ## 怎么用
 
@@ -33,7 +35,7 @@
 - **局部保护**：去噪把想要的细节（眼睛、线稿、文字……）也抹掉了？点「保护笔刷」，**涂哪里，哪里就恢复原图**。
   笔刷边缘是柔和过渡的，接缝自然；效果即时显示、自动保存，重新去噪后也会自动套用。也可以在去噪前先涂。
 - **对比**：上方切换「对比 / 原图 / 结果」。对比模式下拖动中间的分隔线；分隔线跟着图片走，缩放平移都不会错位。按住 `Z` 可以临时看原图。
-- **输出**：「下载 PNG」下载的就是画面上看到的结果；每次的结果也会自动存到 `gui/outputs/`。透明通道会保留。
+- **输出**：「下载 PNG」下载的就是画面上看到的结果；每次的结果也会自动存到 `contrib/akihim-web-gui/outputs/`。透明通道会保留。
 
 可以一次加入多张图片（拖入、`Ctrl+V` 粘贴都行），用下方缩略图或 `←` `→` 切换。处理期间可以先看别的图。
 右上角可以切换浅色 / 深色外观（默认跟随系统），「说明」里有全部快捷键。
@@ -54,14 +56,14 @@
 
 | 文件夹 | 内容 |
 |---|---|
-| `gui/outputs/` | 去噪结果（界面右上「输出资料夹」可以直接打开） |
-| `gui/.data/` | 预览用的原图副本、保护区、处理记录 |
+| `contrib/akihim-web-gui/outputs/` | 去噪结果（界面右上「输出资料夹」可以直接打开） |
+| `contrib/akihim-web-gui/.data/` | 预览用的原图副本、保护区、处理记录 |
 
 这两个文件夹都已在 `.gitignore` 里，不会被提交。想放到别处，可以用环境变量 `ANIME_DENOISE_OUTPUT`、`ANIME_DENOISE_DATA` 指定。
 
 ## 测试
 
 ```bash
-python gui/tests/protection-numerical.py   # 局部保护的混合计算（不需要 GPU）
-python gui/tests/verify.py                 # 端到端：需要先启动 GUI，会实际跑一次去噪
+python contrib/akihim-web-gui/tests/protection-numerical.py   # 局部保护的混合计算（不需要 GPU）
+python contrib/akihim-web-gui/tests/verify.py                 # 端到端：需要先启动 GUI，会实际跑一次去噪
 ```

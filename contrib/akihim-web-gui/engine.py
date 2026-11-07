@@ -5,8 +5,8 @@ from PIL import Image
 import torch
 
 ROOT = Path(__file__).resolve().parent
-# Use upstream denoise.py: from a vendored copy if present, otherwise the repository root (gui/../denoise.py).
-for folder in (ROOT / 'vendor', ROOT.parent):
+# Use upstream denoise.py: from a vendored copy if present, otherwise the repository root (contrib/akihim-web-gui/../../denoise.py).
+for folder in (ROOT / 'vendor', ROOT.parent, ROOT.parent.parent):  # repo root is two levels up in contrib/
     if (folder / 'denoise.py').is_file():
         sys.path.insert(0, str(folder))
         break

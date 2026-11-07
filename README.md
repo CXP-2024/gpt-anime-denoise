@@ -32,11 +32,6 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
 - [致谢](#致谢)
 - [许可](#许可)
 
-### 图形界面
-
-不想敲命令，可以用本机网页界面：Windows 双击 `gui/start.bat`，其他系统运行 `python gui/server.py`。
-拖进图片就能去噪、左右拖动对比，还能用「保护笔刷」把被抹掉的细节（眼睛、线稿等）涂回原图。详见 [gui/README.md](gui/README.md)。
-
 ## 效果
 
 左边去噪前，右边默认方案去噪后。**请点开看原尺寸**，缩小后鳞纹看不出来。
@@ -167,7 +162,7 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 
 ## 致谢
 
-- [@AkihiM](https://github.com/AkihiM) 在 [PR #1](https://github.com/CXP-2024/gpt-anime-denoise/pull/1) 里做了第一版网页界面。现在网页工具里的强度预设、浮动笔刷工具条、多图队列、处理进度、深色外观、自动保存、保留透明通道和显存不足时分块超分等设计，都借鉴了这个 PR 的思路，感谢。
+- [@AkihiM](https://github.com/AkihiM) 在 [PR #1](https://github.com/CXP-2024/gpt-anime-denoise/pull/1) 里做了第一版网页界面。现在网页工具里的强度预设、浮动笔刷工具条、多图队列、处理进度、深色外观、自动保存、保留透明通道和显存不足时分块超分等设计，都借鉴了这个 PR 的思路，感谢。PR 已合并，原版界面完整保留在 [`contrib/akihim-web-gui/`](contrib/akihim-web-gui/)，也可以直接运行。
 
 ## 许可
 
