@@ -167,8 +167,10 @@
   .stage { position: relative; min-height: 0; border-radius: 14px; overflow: hidden; background-color: var(--stage); border: 1px solid var(--line);
     background-image: radial-gradient(var(--stage-dot) 1px, transparent 1.2px); background-size: 18px 18px; user-select: none; touch-action: none; }
   .stage.has { cursor: grab; }
-  .stage.panning, .stage.space { cursor: grabbing !important; }
   .stage.paint { cursor: none; }
+  .stage.space { cursor: grab !important; }
+  .stage.panning { cursor: grabbing !important; }
+  .stage.sizing { cursor: none !important; }
   .frame { position: absolute; pointer-events: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06), 0 14px 40px rgba(0, 0, 0, .16);
     background: #fff; background-image: linear-gradient(45deg, #e3e3e8 25%, transparent 25%, transparent 75%, #e3e3e8 75%), linear-gradient(45deg, #e3e3e8 25%, transparent 25%, transparent 75%, #e3e3e8 75%);
     background-size: 16px 16px; background-position: 0 0, 8px 8px; }
@@ -499,7 +501,7 @@ const S = {
   items: [], cur: null, queue: [], running: null, info: {},
   view: "cmp", base: "orig", split: 0.5, vp: null, lastFit: null,
   brushMode: false, tool: "brush", eye: true, painting: false,
-  peekOrig: false, peekMask: false, space: false,
+  peekOrig: false, peekMask: false, space: false, spaceMode: "", sizeAt: null,
   brush: recall("brush", 60), params: recall("params", { down: 60, l0: 0.001 }),
   mix: recall("mix", 80), feather: recall("feather", 30), toldBrush: recall("toldBrush", false),
 };
@@ -952,6 +954,9 @@ function render() {
   const it = S.cur, has = !!(it && S.vp);
   stage.classList.toggle("has", has);
   stage.classList.toggle("paint", has && S.brushMode && !S.space);
+  // Space held: hand to pan; once the wheel is used it becomes "resize" and only the brush circle shows
+  stage.classList.toggle("space", has && S.space && S.spaceMode !== "size");
+  stage.classList.toggle("sizing", has && S.spaceMode === "size");
   stage.classList.toggle("brushing", has && S.brushMode);
   $("#empty").hidden = !!it;
   for (const id of ["#frame", "#tagL", "#tagR", "#div"]) $(id).hidden = !has;
@@ -992,12 +997,14 @@ let sizeTipTimer = 0;
 function setBrushSize(v, showTip) {
   S.brush = Math.round(Math.min(300, Math.max(2, v)));
   store("brush", S.brush); syncBrushUI(); updateCursor();
-  if (showTip && cursorPt) {
+  const at = S.spaceMode === "size" ? S.sizeAt : cursorPt;
+  if (showTip && at) {
     const tip = $("#sizeTip");
-    tip.textContent = `笔刷 ${S.brush} px`;
-    tip.style.left = cursorPt[0] + "px"; tip.style.top = (cursorPt[1] - Math.max(18, S.brush * S.vp.s / 2) - 14) + "px";
+    tip.textContent = `${S.brush} px`;
+    tip.style.left = at[0] + "px"; tip.style.top = (at[1] - Math.max(10, S.brush * S.vp.s / 2) - 10) + "px";
     tip.hidden = false;
-    clearTimeout(sizeTipTimer); sizeTipTimer = setTimeout(() => { tip.hidden = true; }, 700);
+    clearTimeout(sizeTipTimer);
+    if (S.spaceMode !== "size") sizeTipTimer = setTimeout(() => { tip.hidden = true; }, 700);  // [ ] keys
   }
 }
 stage.addEventListener("wheel", e => {
@@ -1005,7 +1012,7 @@ stage.addEventListener("wheel", e => {
   const r = stage.getBoundingClientRect();
   if (S.space && S.brushMode) {  // hold Space + wheel: fine brush size control (~6% per notch, at least 1 px)
     const up = e.deltaY < 0, d = Math.max(1, Math.round(S.brush * 0.06));
-    S.spaceUsed = true;
+    if (S.spaceMode !== "size") { S.spaceMode = "size"; S.sizeAt = cursorPt || [r.width / 2, r.height / 2]; render(); }
     setBrushSize(S.brush + (up ? d : -d), true);
     return;
   }
@@ -1101,10 +1108,11 @@ let drag = null, cursorPt = null;
 const toImg = (e, r) => [(e.clientX - r.left - S.vp.x) / S.vp.s, (e.clientY - r.top - S.vp.y) / S.vp.s];
 function updateCursor() {
   const b = $("#brushCur");
-  if (!S.brushMode || !S.vp || !cursorPt || (drag && drag.t === "pan")) { b.hidden = true; return; }
+  const pt = S.spaceMode === "size" ? S.sizeAt : cursorPt;
+  if (!S.brushMode || !S.vp || !pt || (drag && drag.t === "pan") || (S.space && S.spaceMode !== "size")) { b.hidden = true; return; }
   const d = S.brush * S.vp.s;
   b.hidden = false; b.style.width = b.style.height = d + "px";
-  b.style.left = cursorPt[0] + "px"; b.style.top = cursorPt[1] + "px";
+  b.style.left = pt[0] + "px"; b.style.top = pt[1] + "px";
 }
 stage.addEventListener("contextmenu", e => e.preventDefault());
 stage.addEventListener("pointerdown", e => {
@@ -1113,7 +1121,7 @@ stage.addEventListener("pointerdown", e => {
   const divOn = !$("#div").hidden, dx = px - S.split * r.width;
   const onKnob = divOn && Math.hypot(dx, py - r.height / 2) < 22, onLine = divOn && Math.abs(dx) < 9;
   stage.setPointerCapture(e.pointerId);
-  if (e.button === 1 || S.space) drag = { t: "pan", x: e.clientX, y: e.clientY };
+  if (e.button === 1 || S.space) { drag = { t: "pan", x: e.clientX, y: e.clientY }; if (S.space) { S.spaceMode = "pan"; $("#sizeTip").hidden = true; } }
   else if (e.button === 0 && (onKnob || (onLine && !S.brushMode))) drag = { t: "split" };
   else if (S.brushMode && (e.button === 0 || e.button === 2)) {
     strokeTool = e.button === 2 ? "erase" : S.tool;
@@ -1153,7 +1161,7 @@ addEventListener("keydown", e => {
     return;
   }
   if (typing || e.altKey) return;
-  if (e.key === " ") { e.preventDefault(); if (!S.space) { S.space = true; stage.classList.add("space"); render(); updateCursor(); } return; }
+  if (e.key === " ") { e.preventDefault(); if (!S.space) { S.space = true; S.spaceMode = "idle"; render(); updateCursor(); } return; }
   if (e.key === "?") { $("#helpDlg").showModal(); return; }
   if (!S.cur) return;
   const onRange = el.tagName === "INPUT";
@@ -1172,11 +1180,11 @@ addEventListener("keydown", e => {
 });
 addEventListener("keyup", e => {
   const k = e.key.toLowerCase();
-  if (e.key === " ") { S.space = false; stage.classList.remove("space"); render(); updateCursor(); }
+  if (e.key === " ") { S.space = false; S.spaceMode = ""; $("#sizeTip").hidden = true; render(); updateCursor(); }
   if (k === "z" && S.peekOrig) { S.peekOrig = false; render(); }
   if (k === "m" && S.peekMask) { S.peekMask = false; render(); }
 });
-addEventListener("blur", () => { S.space = S.peekOrig = S.peekMask = false; stage.classList.remove("space"); render(); });
+addEventListener("blur", () => { S.space = S.peekOrig = S.peekMask = false; S.spaceMode = ""; $("#sizeTip").hidden = true; render(); updateCursor(); });
 
 syncBrushUI(); syncPanel(); renderStrip(); render();
 </script>
