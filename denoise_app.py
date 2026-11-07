@@ -75,7 +75,8 @@ TOKEN = secrets.token_urlsafe(24)  # injected into the page; every POST must car
 
 lock = threading.Lock()
 models = {}
-progress = {"busy": False, "stage": "", "started": 0.0}
+progress = {"busy": False, "stage": "", "started": 0.0, "job": ""}
+cancelled = set()  # job ids the page gave up on; checked between steps and inside the L0 loop
 
 
 def stage(text):
@@ -121,11 +122,13 @@ sr_cache = OrderedDict()  # (image hash, downscale) -> super-resolved image; cha
 SR_CACHE_SIZE = 8
 
 
-def process(data, down, lam):
+def process(data, down, lam, job=""):
     src, alpha = decode(data)
     key = (hashlib.sha1(data).hexdigest(), round(down, 4))
+    stop = (lambda: job in cancelled) if job else None
     with lock:  # one image at a time on the GPU
-        progress.update(busy=True, started=time.time())
+        dn._check(stop)  # cancelled while waiting for the previous image
+        progress.update(busy=True, started=time.time(), job=job)
         try:
             t0 = time.time()
             sr = sr_cache.get(key)
@@ -137,12 +140,13 @@ def process(data, down, lam):
                 model = get_model("esrgan")
                 stage(f"预缩 {round(down * 100)}% · 动漫超分重建")
                 dn.DOWN = down
-                sr = dn.sr_at(model, src, DEVICE)
-                sr_cache[key] = sr
+                sr = dn.sr_at(model, src, DEVICE, stop)
+                sr_cache[key] = sr  # kept even if L0 is cancelled next: the re-run will reuse it
                 while len(sr_cache) > SR_CACHE_SIZE:
                     sr_cache.popitem(last=False)
+            dn._check(stop)
             stage("L0 平滑 · 压平细碎纹理")
-            out = dn.to_img(dn.l0_smooth(dn.to_arr(sr), lam, device=DEVICE)) if lam > 0 else sr.copy()
+            out = dn.to_img(dn.l0_smooth(dn.to_arr(sr), lam, device=DEVICE, stop=stop)) if lam > 0 else sr.copy()
             if DEVICE == "cuda":
                 dn.torch.cuda.empty_cache()
             if alpha is not None:
@@ -152,7 +156,10 @@ def process(data, down, lam):
             buf = io.BytesIO()
             out.save(buf, "PNG", compress_level=1)  # local transfer only: fast encode matters more than size
         finally:
-            progress.update(busy=False, stage="")
+            progress.update(busy=False, stage="", job="")
+            cancelled.discard(job)
+            if DEVICE == "cuda":
+                dn.torch.cuda.empty_cache()
     return buf.getvalue(), elapsed, src.size, cached, alpha is not None
 
 
@@ -232,10 +239,21 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/denoise":
                 down = min(max(float(q.get("down", ["0.6"])[0]), 0.1), 1.0)
                 lam = min(max(float(q.get("l0", [str(dn.L0)])[0]), 0.0), 0.05)
-                png, elapsed, (w, h), cached, has_alpha = process(self._body(), down, lam)
+                job = q.get("job", [""])[0][:64]
+                try:
+                    png, elapsed, (w, h), cached, has_alpha = process(self._body(), down, lam, job)
+                except dn.Cancelled:
+                    return self._json({"cancelled": True}, 409)
                 return self._send(200, png, "image/png", {
                     "X-Elapsed": f"{elapsed:.1f}", "X-Device": DEVICE_NAME, "X-Size": f"{w}x{h}",
                     "X-SR-Cached": "1" if cached else "0", "X-Alpha": "1" if has_alpha else "0"})
+            if u.path == "/api/cancel":
+                job = q.get("job", [""])[0][:64]
+                if job:
+                    cancelled.add(job)
+                    if len(cancelled) > 200:  # stale ids of jobs that never arrived
+                        cancelled.clear()
+                return self._json({"ok": True, "running": progress["job"] == job})
             if u.path == "/api/save":
                 data = self._body()
                 with Image.open(io.BytesIO(data)) as im:

@@ -66,15 +66,25 @@ def load_model(key, folder, device):
     return spandrel.ModelLoader().load_from_file(str(fetch(key, folder))).model.to(device).eval()
 
 
-def l0_smooth(img, lam, kappa=2.0, beta_max=1e5, device="cpu"):
+class Cancelled(Exception):
+    """Raised when the optional stop() callback asks a long step to give up early."""
+
+
+def _check(stop):
+    if stop is not None and stop():
+        raise Cancelled()
+
+
+def l0_smooth(img, lam, kappa=2.0, beta_max=1e5, device="cpu", stop=None):
     """L0 gradient minimization (Xu et al. 2011) on an HxWx3 float image in [0, 1].
 
     Flattens small ripples inside flat colour areas while keeping lines and colour edges; invents no new detail.
     On a CUDA device it runs the same float64 maths with torch.fft (~30x faster, identical 8-bit output).
+    stop: optional callable checked every iteration; when it returns True, Cancelled is raised.
     """
     if str(device).startswith("cuda"):
         try:
-            return _l0_torch(img, lam, kappa, beta_max, device)
+            return _l0_torch(img, lam, kappa, beta_max, device, stop)
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()  # very large image: fall back to the CPU path
     S = img.astype(np.float64)
@@ -85,6 +95,7 @@ def l0_smooth(img, lam, kappa=2.0, beta_max=1e5, device="cpu"):
     N1 = np.fft.fft2(S, axes=(0, 1))
     beta = 2 * lam
     while beta < beta_max:
+        _check(stop)
         h = np.roll(S, -1, 1) - S
         v = np.roll(S, -1, 0) - S
         t = (h ** 2 + v ** 2).sum(2) < lam / beta
@@ -96,7 +107,7 @@ def l0_smooth(img, lam, kappa=2.0, beta_max=1e5, device="cpu"):
     return S.clip(0, 1)
 
 
-def _l0_torch(img, lam, kappa, beta_max, device):
+def _l0_torch(img, lam, kappa, beta_max, device, stop=None):
     S = torch.from_numpy(np.ascontiguousarray(img, np.float64)).to(device).permute(2, 0, 1)  # 3,H,W
     _, H, W = S.shape
     fx = torch.zeros(H, W, dtype=torch.float64, device=device); fx[0, 0], fx[0, -1] = -1, 1
@@ -105,6 +116,7 @@ def _l0_torch(img, lam, kappa, beta_max, device):
     N1 = torch.fft.fft2(S)
     beta = 2 * lam
     while beta < beta_max:
+        _check(stop)
         h = torch.roll(S, -1, 2) - S
         v = torch.roll(S, -1, 1) - S
         t = (h ** 2 + v ** 2).sum(0, keepdim=True) < lam / beta
@@ -133,16 +145,39 @@ def _upscale_whole(model, im, device):
     return Image.fromarray((y * 255 + 0.5).astype(np.uint8))
 
 
-def upscale(model, im, device, tile=256, border=32):
-    """Whole image at once; if the GPU runs out of memory, the same network over overlapping tiles."""
-    try:
-        return _upscale_whole(model, im, device)
-    except torch.cuda.OutOfMemoryError:
-        torch.cuda.empty_cache()
+SR_BYTES_PER_PIXEL = 15000  # measured: the x4 anime 6B model peaks near 8.7 GB for a 0.57 MP input
+
+
+def _tile_size(im, device):
+    """Tile edge to use, or None when the whole image fits in free GPU memory.
+
+    Planning ahead matters on Windows: the NVIDIA driver spills into system RAM instead of raising
+    OutOfMemoryError, so an oversized whole-image pass just crawls for minutes.
+    """
+    if not str(device).startswith("cuda"):
+        return None
+    free, _ = torch.cuda.mem_get_info()
+    if im.width * im.height * SR_BYTES_PER_PIXEL < free * 0.8:
+        return None
+    side = int((free * 0.25 / SR_BYTES_PER_PIXEL) ** 0.5) - 64  # leave headroom: near-full VRAM is slow
+    return max(128, min(512, side))
+
+
+def upscale(model, im, device, tile=256, border=32, stop=None):
+    """Whole image at once when it fits; otherwise the same network over overlapping tiles."""
+    planned = _tile_size(im, device)
+    if planned:
+        tile = planned
+    else:
+        try:
+            return _upscale_whole(model, im, device)
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
     W, H = im.size
     out, scale = None, None
     for y in range(0, H, tile):
         for x in range(0, W, tile):
+            _check(stop)
             x2, y2 = min(x + tile, W), min(y + tile, H)
             box = (max(0, x - border), max(0, y - border), min(W, x2 + border), min(H, y2 + border))
             patch = _upscale_whole(model, im.crop(box), device)
@@ -154,11 +189,11 @@ def upscale(model, im, device, tile=256, border=32):
     return out
 
 
-def sr_at(model, src, device):
+def sr_at(model, src, device, stop=None):
     """Downscale (box filter averages the fine texture away), upscale with the model, resize back to the input size."""
     W, H = src.size
     small = src.resize((round(W * DOWN), round(H * DOWN)), Image.BOX)
-    return upscale(model, small, device).resize((W, H), Image.LANCZOS)
+    return upscale(model, small, device, stop=stop).resize((W, H), Image.LANCZOS)
 
 
 def run(src, methods, models, device, lam=L0):
