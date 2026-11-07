@@ -183,6 +183,7 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 ## 致谢
 
 - [@AkihiM](https://github.com/AkihiM) 在 [PR #1](https://github.com/CXP-2024/gpt-anime-denoise/pull/1) 里做了第一版网页界面。现在网页工具里的强度预设、浮动笔刷工具条、多图队列、处理进度、深色外观、自动保存、保留透明通道和显存不足时分块超分等设计，都借鉴了这个 PR 的思路，感谢。PR 已合并，原版界面完整保留在 [`contrib/akihim-web-gui/`](contrib/akihim-web-gui/)，也可以直接运行。
+- [@juanhanyu](https://github.com/juanhanyu) 在 [PR #2](https://github.com/CXP-2024/gpt-anime-denoise/pull/2) 里加了一键安装依赖（`setup_env.py`，NVIDIA CUDA / AMD ROCm / CPU）和能自动找 Python 的 `去噪工具.bat`，在 [PR #3](https://github.com/CXP-2024/gpt-anime-denoise/pull/3) 里解决了 AMD 显卡上每种新尺寸都要卡约 90 秒的问题，感谢。
 
 ## 许可
 
