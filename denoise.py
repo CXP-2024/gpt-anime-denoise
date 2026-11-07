@@ -14,13 +14,20 @@ Outputs keep the input size. Models are downloaded on first use into --models (d
 import argparse
 import hashlib
 import io
+import os
 import urllib.request
 import zipfile
 from pathlib import Path
 
-import numpy as np
-import torch
-from PIL import Image, ImageCms, ImageDraw, ImageFont, ImageOps
+# AMD ROCm: by default MIOpen benchmarks every convolution algorithm the first time it meets a new input size,
+# single-threaded on the CPU while the GPU sits idle. On an RX 7700 XT that is ~90 s per new image size for the
+# ESRGAN layers. FAST picks a kernel by heuristics instead (~0.3 s); each pass is a few ms slower, which is noise
+# next to that. Must be set before torch loads MIOpen; has no effect on NVIDIA or CPU. An explicit value wins.
+os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
+
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+from PIL import Image, ImageCms, ImageDraw, ImageFont, ImageOps  # noqa: E402
 
 MODELS = {
     "esrgan": ("RealESRGAN_x4plus_anime_6B.pth",
