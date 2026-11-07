@@ -3,11 +3,17 @@
     python denoise_app.py            # opens http://127.0.0.1:7865/ in the browser
 
 Everything runs on this machine; the page only talks to this local server.
-Launching it again while it runs just reopens the page.
+Launching it again while it runs just reopens the page (an older copy left running after an update is replaced).
+Finished images are also saved to ./outputs (override with the ANIME_DENOISE_OUTPUT environment variable).
 """
 import hashlib
 import io
 import json
+import os
+import re
+import secrets
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -19,71 +25,150 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 PORT = 7865  # fixed, so a second launch just reopens the running app
-
-
-def _already_running():
-    try:
-        urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
-            f"http://127.0.0.1:{PORT}/api/info", timeout=1.5)
-        return True
-    except Exception:
-        return False
-
-
-if __name__ == "__main__" and _already_running():  # check before the slow torch import
-    if "--no-browser" not in sys.argv:
-        webbrowser.open(f"http://127.0.0.1:{PORT}/")
-    sys.exit(0)
-
-from PIL import Image  # noqa: E402
-
 HERE = Path(__file__).resolve().parent
+# Fingerprint of the backend code: a launch replaces a running copy whose code is older.
+VERSION = hashlib.sha1(b"".join((HERE / n).read_bytes() for n in ("denoise_app.py", "denoise.py"))).hexdigest()[:12]
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _running_info():
+    try:
+        return json.loads(OPENER.open(f"http://127.0.0.1:{PORT}/api/info", timeout=1.5).read())
+    except Exception:
+        return None
+
+
+if __name__ == "__main__":  # check before the slow torch import
+    info = _running_info()
+    if info and info.get("app") == "anime-denoise":
+        if info.get("version") == VERSION or info.get("busy"):
+            if "--no-browser" not in sys.argv:
+                webbrowser.open(f"http://127.0.0.1:{PORT}/")
+            sys.exit(0)
+        try:  # outdated copy from before an update: replace it
+            os.kill(int(info["pid"]), signal.SIGTERM)
+            time.sleep(0.8)
+        except Exception:
+            pass
+    elif info and "device" in info and "app" not in info:  # first app version (no pid, quit had no token)
+        try:
+            OPENER.open(urllib.request.Request(f"http://127.0.0.1:{PORT}/api/quit", data=b"", method="POST"), timeout=2)
+            time.sleep(0.8)
+        except Exception:
+            pass
+
+from PIL import Image, ImageOps, UnidentifiedImageError  # noqa: E402
+
 sys.path.insert(0, str(HERE))
 import denoise as dn  # noqa: E402
 
 PAGE = HERE / "app" / "index.html"
+ICON = HERE / "app" / "icon.ico"
+OUTPUT = Path(os.environ.get("ANIME_DENOISE_OUTPUT", HERE / "outputs"))
 MODELS_DIR = Path.home() / ".cache" / "gpt-anime-denoise"
 DEVICE = "cuda" if dn.torch.cuda.is_available() else "cpu"
 DEVICE_NAME = dn.torch.cuda.get_device_name(0) if DEVICE == "cuda" else "CPU"
 MAX_BYTES = 80 * 1024 * 1024
+MAX_PIXELS = 16_777_216  # 4096 x 4096
+Image.MAX_IMAGE_PIXELS = MAX_PIXELS * 2
+TOKEN = secrets.token_urlsafe(24)  # injected into the page; every POST must carry it
 
 lock = threading.Lock()
 models = {}
+progress = {"busy": False, "stage": "", "started": 0.0}
+
+
+def stage(text):
+    progress["stage"] = text
 
 
 def get_model(key):
     if key not in models:
-        models[key] = dn.load_model(key, MODELS_DIR, DEVICE)
+        stage("首次使用：加载模型（第一次会自动下载约 18 MB）")
+        try:
+            models[key] = dn.load_model(key, MODELS_DIR, DEVICE)
+        except SystemExit as e:  # denoise.py exits when a downloaded file fails its SHA-256 check
+            raise RuntimeError("模型下载不完整（校验不符），请检查网络后重试") from e
+        except OSError as e:
+            raise RuntimeError(f"模型下载失败，请检查网络后重试（{e}）") from None
     return models[key]
 
 
+def decode(data):
+    """Open an upload the way the browser shows it: EXIF rotation applied, alpha kept separately."""
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            if getattr(im, "is_animated", False):
+                raise ValueError("请使用静态图片；动图请先导出要处理的那一帧")
+            if im.width * im.height > MAX_PIXELS:
+                raise ValueError(f"图片太大（{im.width}×{im.height}），最多约 1677 万像素")
+            if min(im.size) < 16:
+                raise ValueError("图片至少要 16×16")
+            im = ImageOps.exif_transpose(im)
+            alpha = None
+            if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                a = im.convert("RGBA").getchannel("A")
+                if a.getextrema() != (255, 255):  # only keep alpha that is actually used
+                    alpha = a
+            return im.convert("RGB"), alpha
+    except UnidentifiedImageError:
+        raise ValueError("读不出这张图，请使用 PNG、JPEG、WebP 或 BMP") from None
+    except Image.DecompressionBombError:
+        raise ValueError("图片太大，最多约 1677 万像素") from None
+
+
 sr_cache = OrderedDict()  # (image hash, downscale) -> super-resolved image; changing only L0 skips the model
-SR_CACHE_SIZE = 6
+SR_CACHE_SIZE = 8
 
 
 def process(data, down, lam):
-    src = Image.open(io.BytesIO(data)).convert("RGB")
+    src, alpha = decode(data)
     key = (hashlib.sha1(data).hexdigest(), round(down, 4))
     with lock:  # one image at a time on the GPU
-        t0 = time.time()
-        sr = sr_cache.get(key)
-        cached = sr is not None
-        if cached:
-            sr_cache.move_to_end(key)
+        progress.update(busy=True, started=time.time())
+        try:
+            t0 = time.time()
+            sr = sr_cache.get(key)
+            cached = sr is not None
+            if cached:
+                sr_cache.move_to_end(key)
+                stage("复用超分结果")
+            else:
+                model = get_model("esrgan")
+                stage(f"预缩 {round(down * 100)}% · 动漫超分重建")
+                dn.DOWN = down
+                sr = dn.sr_at(model, src, DEVICE)
+                sr_cache[key] = sr
+                while len(sr_cache) > SR_CACHE_SIZE:
+                    sr_cache.popitem(last=False)
+            stage("L0 平滑 · 压平细碎纹理")
+            out = dn.to_img(dn.l0_smooth(dn.to_arr(sr), lam, device=DEVICE)) if lam > 0 else sr.copy()
+            if DEVICE == "cuda":
+                dn.torch.cuda.empty_cache()
+            if alpha is not None:
+                out.putalpha(alpha)
+            stage("整理结果")
+            elapsed = time.time() - t0
+            buf = io.BytesIO()
+            out.save(buf, "PNG", compress_level=1)  # local transfer only: fast encode matters more than size
+        finally:
+            progress.update(busy=False, stage="")
+    return buf.getvalue(), elapsed, src.size, cached, alpha is not None
+
+
+def safe_name(name):
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", Path(name).stem).strip(" .")[:90] or "image"
+    return stem + ".png"
+
+
+def reveal(path):
+    if os.name == "nt":
+        if path.is_file():
+            subprocess.Popen(["explorer", f"/select,{path}"])
         else:
-            dn.DOWN = down
-            sr = dn.sr_at(get_model("esrgan"), src, DEVICE)
-            sr_cache[key] = sr
-            while len(sr_cache) > SR_CACHE_SIZE:
-                sr_cache.popitem(last=False)
-        t_sr = time.time() - t0
-        out = dn.to_img(dn.l0_smooth(dn.to_arr(sr), lam, device=DEVICE)) if lam > 0 else sr
-        if DEVICE == "cuda":
-            dn.torch.cuda.empty_cache()
-        elapsed = time.time() - t0
-    buf = io.BytesIO()
-    out.save(buf, "PNG", compress_level=1)  # local transfer only: fast encode matters more than size
-    return buf.getvalue(), elapsed, src.size, cached, t_sr
+            os.startfile(path.parent if not path.is_dir() else path)
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path if path.is_dir() else path.parent)])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -95,10 +180,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         for k, v in (headers or {}).items():
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
 
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
@@ -106,33 +195,72 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/":
-            self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+            page = PAGE.read_bytes().replace(b"__TOKEN__", TOKEN.encode())
+            self._send(200, page, "text/html; charset=utf-8",
+                       {"Content-Security-Policy": "default-src 'self'; img-src 'self' blob: data:; "
+                        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+                        "connect-src 'self'; frame-ancestors 'none'"})
+        elif path == "/favicon.ico" and ICON.is_file():
+            self._send(200, ICON.read_bytes(), "image/x-icon")
         elif path == "/api/info":
-            self._json({"device": DEVICE_NAME, "down": 0.6, "l0": dn.L0})
+            self._json({"app": "anime-denoise", "version": VERSION, "pid": os.getpid(), "busy": progress["busy"],
+                        "device": DEVICE_NAME, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT)})
+        elif path == "/api/progress":
+            p = dict(progress)
+            p["elapsed"] = round(time.time() - p["started"], 1) if p["busy"] else 0
+            self._json(p)
         else:
             self._send(404, b"not found", "text/plain")
 
+    def _allowed(self):
+        origin = self.headers.get("Origin")
+        good_origin = origin is None or re.fullmatch(r"http://(127\.0\.0\.1|localhost):%d" % self.server.server_port, origin)
+        return bool(good_origin) and secrets.compare_digest(self.headers.get("X-Token", ""), TOKEN)
+
+    def _body(self, limit=MAX_BYTES):
+        n = int(self.headers.get("Content-Length", 0))
+        if not 0 < n <= limit:
+            raise ValueError("图片为空或超过 80 MB")
+        return self.rfile.read(n)
+
     def do_POST(self):
         u = urlparse(self.path)
-        if u.path == "/api/quit":
-            self._json({"ok": True})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
-            return
-        if u.path != "/api/denoise":
-            return self._send(404, b"not found", "text/plain")
-        n = int(self.headers.get("Content-Length", 0))
-        if not 0 < n <= MAX_BYTES:
-            return self._json({"error": "图片为空或太大"}, 400)
         q = parse_qs(u.query)
+        if not self._allowed():
+            return self._json({"error": "页面已过期，请刷新或重新打开工具"}, 403)
         try:
-            down = min(max(float(q.get("down", ["0.6"])[0]), 0.1), 1.0)
-            lam = min(max(float(q.get("l0", [str(dn.L0)])[0]), 0.0), 0.05)
-            png, elapsed, (w, h), cached, t_sr = process(self.rfile.read(n), down, lam)
+            if u.path == "/api/denoise":
+                down = min(max(float(q.get("down", ["0.6"])[0]), 0.1), 1.0)
+                lam = min(max(float(q.get("l0", [str(dn.L0)])[0]), 0.0), 0.05)
+                png, elapsed, (w, h), cached, has_alpha = process(self._body(), down, lam)
+                return self._send(200, png, "image/png", {
+                    "X-Elapsed": f"{elapsed:.1f}", "X-Device": DEVICE_NAME, "X-Size": f"{w}x{h}",
+                    "X-SR-Cached": "1" if cached else "0", "X-Alpha": "1" if has_alpha else "0"})
+            if u.path == "/api/save":
+                data = self._body()
+                with Image.open(io.BytesIO(data)) as im:
+                    if im.format != "PNG":
+                        raise ValueError("只能保存 PNG")
+                name = safe_name(q.get("name", ["image.png"])[0])
+                OUTPUT.mkdir(parents=True, exist_ok=True)
+                tmp = OUTPUT / (name + ".tmp")
+                tmp.write_bytes(data)
+                tmp.replace(OUTPUT / name)
+                return self._json({"file": name, "dir": str(OUTPUT)})
+            if u.path == "/api/reveal":
+                OUTPUT.mkdir(parents=True, exist_ok=True)
+                name = q.get("name", [""])[0]
+                reveal(OUTPUT / safe_name(name) if name else OUTPUT)
+                return self._json({"ok": True})
+            if u.path == "/api/quit":
+                self._json({"ok": True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
+            return self._json({"error": "没有这个操作"}, 404)
+        except ValueError as e:
+            return self._json({"error": str(e)}, 400)
         except Exception as e:
             return self._json({"error": str(e)}, 500)
-        self._send(200, png, "image/png", {"X-Elapsed": f"{elapsed:.1f}", "X-Device": DEVICE_NAME,
-                                           "X-Size": f"{w}x{h}", "X-SR-Cached": "1" if cached else "0",
-                                           "X-SR-Time": f"{t_sr:.2f}"})
 
 
 class Server(ThreadingHTTPServer):
@@ -149,13 +277,13 @@ def main():
     try:
         srv = Server(("127.0.0.1", PORT), Handler)
     except OSError:  # started at the same moment as another copy, or the port is taken by something else
-        if _already_running():
+        if _running_info():
             if "--no-browser" not in sys.argv:
                 webbrowser.open(f"http://127.0.0.1:{PORT}/")
             return
         srv = Server(("127.0.0.1", 0), Handler)
     url = f"http://127.0.0.1:{srv.server_port}/"
-    print(f"Anime Denoise running at {url}  ({DEVICE_NAME})", flush=True)
+    print(f"Anime Denoise running at {url}  ({DEVICE_NAME}, outputs -> {OUTPUT})", flush=True)
     if "--no-browser" not in sys.argv:
         webbrowser.open(url)
     srv.serve_forever()

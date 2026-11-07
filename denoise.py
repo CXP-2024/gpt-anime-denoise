@@ -126,11 +126,32 @@ def to_img(a):
     return Image.fromarray((a * 255 + 0.5).astype(np.uint8))
 
 
-def upscale(model, im, device):
+def _upscale_whole(model, im, device):
     t = torch.from_numpy(np.asarray(im, np.float32) / 255).permute(2, 0, 1)[None].to(device)
     with torch.no_grad():
         y = model(t).clamp(0, 1)[0].permute(1, 2, 0).cpu().numpy()
     return Image.fromarray((y * 255 + 0.5).astype(np.uint8))
+
+
+def upscale(model, im, device, tile=256, border=32):
+    """Whole image at once; if the GPU runs out of memory, the same network over overlapping tiles."""
+    try:
+        return _upscale_whole(model, im, device)
+    except torch.cuda.OutOfMemoryError:
+        torch.cuda.empty_cache()
+    W, H = im.size
+    out, scale = None, None
+    for y in range(0, H, tile):
+        for x in range(0, W, tile):
+            x2, y2 = min(x + tile, W), min(y + tile, H)
+            box = (max(0, x - border), max(0, y - border), min(W, x2 + border), min(H, y2 + border))
+            patch = _upscale_whole(model, im.crop(box), device)
+            if out is None:
+                scale = patch.width // (box[2] - box[0])
+                out = Image.new("RGB", (W * scale, H * scale))
+            out.paste(patch.crop(((x - box[0]) * scale, (y - box[1]) * scale,
+                                  (x2 - box[0]) * scale, (y2 - box[1]) * scale)), (x * scale, y * scale))
+    return out
 
 
 def sr_at(model, src, device):
