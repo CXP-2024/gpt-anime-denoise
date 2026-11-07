@@ -171,6 +171,9 @@
   .stage.space { cursor: grab !important; }
   .stage.panning { cursor: grabbing !important; }
   .stage.sizing { cursor: none !important; }
+  /* the floating toolbar is UI, not canvas: normal cursors even while painting / panning */
+  .floatbar { cursor: default !important; }
+  .floatbar button, .floatbar label, .floatbar input { cursor: pointer !important; }
   .frame { position: absolute; pointer-events: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .06), 0 14px 40px rgba(0, 0, 0, .16);
     background: #fff; background-image: linear-gradient(45deg, #e3e3e8 25%, transparent 25%, transparent 75%, #e3e3e8 75%), linear-gradient(45deg, #e3e3e8 25%, transparent 25%, transparent 75%, #e3e3e8 75%);
     background-size: 16px 16px; background-position: 0 0, 8px 8px; }
@@ -1008,6 +1011,7 @@ function setBrushSize(v, showTip) {
   }
 }
 stage.addEventListener("wheel", e => {
+  if (onUI(e)) return;
   e.preventDefault();
   const r = stage.getBoundingClientRect();
   if (S.space && S.brushMode) {  // hold Space + wheel: fine brush size control (~6% per notch, at least 1 px)
@@ -1018,7 +1022,7 @@ stage.addEventListener("wheel", e => {
   }
   zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top);
 }, { passive: false });
-stage.addEventListener("dblclick", e => { if (!S.brushMode) fit(); });
+stage.addEventListener("dblclick", e => { if (!S.brushMode && !onUI(e)) fit(); });
 new ResizeObserver(() => {
   if (!S.vp) return render();
   const f = S.lastFit, v = S.vp;
@@ -1105,6 +1109,7 @@ function endStroke() {
 
 /* ---------------- pointer ---------------- */
 let drag = null, cursorPt = null;
+const onUI = e => !!(e.target && e.target.closest && e.target.closest(".floatbar"));  // toolbar inside the stage
 const toImg = (e, r) => [(e.clientX - r.left - S.vp.x) / S.vp.s, (e.clientY - r.top - S.vp.y) / S.vp.s];
 function updateCursor() {
   const b = $("#brushCur");
@@ -1116,7 +1121,7 @@ function updateCursor() {
 }
 stage.addEventListener("contextmenu", e => e.preventDefault());
 stage.addEventListener("pointerdown", e => {
-  if (!S.cur || !S.vp) return;
+  if (!S.cur || !S.vp || onUI(e)) return;
   const r = stage.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
   const divOn = !$("#div").hidden, dx = px - S.split * r.width;
   const onKnob = divOn && Math.hypot(dx, py - r.height / 2) < 22, onLine = divOn && Math.abs(dx) < 9;
@@ -1133,7 +1138,7 @@ stage.addEventListener("pointerdown", e => {
 });
 stage.addEventListener("pointermove", e => {
   const r = stage.getBoundingClientRect();
-  cursorPt = [e.clientX - r.left, e.clientY - r.top]; updateCursor();
+  cursorPt = !drag && onUI(e) ? null : [e.clientX - r.left, e.clientY - r.top]; updateCursor();  // no brush circle over the toolbar
   if (!drag) return;
   if (drag.t === "split") { S.split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); render(); }
   else if (drag.t === "paint") strokeTo(toImg(e, r));
