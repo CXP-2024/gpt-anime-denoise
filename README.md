@@ -90,6 +90,8 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 
 `--l0` 作用于所有带 `_l0` 的方法（默认方案、`cugan60_l0`），`--all` 的对比图也会按这个值标注。
 
+支持 PNG、JPEG、WebP、BMP、GIF（静态）、TIFF、AVIF。透明背景、EXIF 方向和 RGB 图的色彩配置（ICC）会保留，16 位图会正确转成 8 位，CMYK 按内嵌配置转成 RGB；输出都是 PNG。
+
 模型在第一次运行时自动下载到 `~/.cache/gpt-anime-denoise`（共约 100 MB，带 SHA-256 校验），也可以用 `--models` 指定已有目录。有 NVIDIA 显卡时自动用 GPU，没有就用 CPU。
 
 实测速度（1024×1536，约 157 万像素，和 Codex 默认出的 16:9 图 1672×941 差不多大；默认方案）：

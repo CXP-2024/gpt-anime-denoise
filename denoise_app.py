@@ -57,7 +57,7 @@ if __name__ == "__main__":  # check before the slow torch import
         except Exception:
             pass
 
-from PIL import Image, ImageOps, UnidentifiedImageError  # noqa: E402
+from PIL import Image, UnidentifiedImageError  # noqa: E402
 
 sys.path.insert(0, str(HERE))
 import denoise as dn  # noqa: E402
@@ -96,7 +96,7 @@ def get_model(key):
 
 
 def decode(data):
-    """Open an upload the way the browser shows it: EXIF rotation applied, alpha kept separately."""
+    """Size / animation checks, then denoise.open_image: (rgb, alpha or None, icc or None)."""
     try:
         with Image.open(io.BytesIO(data)) as im:
             if getattr(im, "is_animated", False):
@@ -105,17 +105,19 @@ def decode(data):
                 raise ValueError(f"图片太大（{im.width}×{im.height}），最多约 1677 万像素")
             if min(im.size) < 16:
                 raise ValueError("图片至少要 16×16")
-            im = ImageOps.exif_transpose(im)
-            alpha = None
-            if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
-                a = im.convert("RGBA").getchannel("A")
-                if a.getextrema() != (255, 255):  # only keep alpha that is actually used
-                    alpha = a
-            return im.convert("RGB"), alpha
+        return dn.open_image(io.BytesIO(data))
     except UnidentifiedImageError:
-        raise ValueError("读不出这张图，请使用 PNG、JPEG、WebP 或 BMP") from None
+        raise ValueError("读不出这张图，支持 PNG、JPEG、WebP、BMP、GIF、TIFF、AVIF") from None
     except Image.DecompressionBombError:
         raise ValueError("图片太大，最多约 1677 万像素") from None
+
+
+def normalize(data):
+    """The source as the server sees it, as PNG: the page shows and blends exactly these pixels."""
+    rgb, alpha, icc = decode(data)
+    buf = io.BytesIO()
+    dn.save_png(rgb, buf, alpha, icc, compress_level=1)
+    return buf.getvalue(), rgb.size, alpha is not None
 
 
 sr_cache = OrderedDict()  # (image hash, downscale) -> super-resolved image; changing only L0 skips the model
@@ -123,7 +125,7 @@ SR_CACHE_SIZE = 8
 
 
 def process(data, down, lam, job=""):
-    src, alpha = decode(data)
+    src, alpha, icc = decode(data)
     key = (hashlib.sha1(data).hexdigest(), round(down, 4))
     stop = (lambda: job in cancelled) if job else None
     with lock:  # one image at a time on the GPU
@@ -149,12 +151,10 @@ def process(data, down, lam, job=""):
             out = dn.to_img(dn.l0_smooth(dn.to_arr(sr), lam, device=DEVICE, stop=stop)) if lam > 0 else sr.copy()
             if DEVICE == "cuda":
                 dn.torch.cuda.empty_cache()
-            if alpha is not None:
-                out.putalpha(alpha)
             stage("整理结果")
             elapsed = time.time() - t0
             buf = io.BytesIO()
-            out.save(buf, "PNG", compress_level=1)  # local transfer only: fast encode matters more than size
+            dn.save_png(out, buf, alpha, icc, compress_level=1)  # local transfer only: fast encode matters more than size
         finally:
             progress.update(busy=False, stage="", job="")
             cancelled.discard(job)
@@ -247,6 +247,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, png, "image/png", {
                     "X-Elapsed": f"{elapsed:.1f}", "X-Device": DEVICE_NAME, "X-Size": f"{w}x{h}",
                     "X-SR-Cached": "1" if cached else "0", "X-Alpha": "1" if has_alpha else "0"})
+            if u.path == "/api/convert":
+                png, (w, h), has_alpha = normalize(self._body())
+                return self._send(200, png, "image/png", {"X-Size": f"{w}x{h}", "X-Alpha": "1" if has_alpha else "0"})
             if u.path == "/api/cancel":
                 job = q.get("job", [""])[0][:64]
                 if job:

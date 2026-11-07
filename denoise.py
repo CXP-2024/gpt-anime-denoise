@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageCms, ImageDraw, ImageFont, ImageOps
 
 MODELS = {
     "esrgan": ("RealESRGAN_x4plus_anime_6B.pth",
@@ -148,6 +148,50 @@ def _upscale_whole(model, im, device):
 SR_BYTES_PER_PIXEL = 15000  # measured: the x4 anime 6B model peaks near 8.7 GB for a 0.57 MP input
 
 
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".jfif", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif", ".tga")
+
+
+def open_image(src):
+    """Open an image the way a viewer shows it; returns (rgb, alpha or None, icc profile bytes or None).
+
+    EXIF rotation is applied, 16-bit / 32-bit greyscale is scaled to 8-bit (a plain convert would clip it to white),
+    CMYK is converted through its embedded profile when it has one, and transparency is kept separately.
+    The ICC profile is returned only for RGB sources, where it still describes the pixel values.
+    """
+    im = Image.open(src)
+    im.load()
+    im = ImageOps.exif_transpose(im)
+    icc = im.info.get("icc_profile")
+    mode = im.mode
+    if mode in ("I;16", "I;16B", "I;16L", "I;16N", "I", "F"):
+        a = np.asarray(im, np.float64)
+        scale = 257.0 if a.max() > 255 else 1.0
+        im = Image.fromarray(np.clip(a / scale + 0.5, 0, 255).astype(np.uint8), "L")
+    alpha = None
+    if im.mode in ("RGBA", "LA", "PA", "La", "RGBa") or "transparency" in im.info:
+        a = im.convert("RGBA").getchannel("A")
+        if a.getextrema() != (255, 255):  # only keep alpha that is actually used
+            alpha = a
+    if im.mode == "CMYK" and icc:
+        try:
+            im = ImageCms.profileToProfile(im, ImageCms.ImageCmsProfile(io.BytesIO(icc)),
+                                           ImageCms.createProfile("sRGB"), outputMode="RGB")
+        except Exception:
+            pass
+    if mode not in ("RGB", "RGBA", "RGBX", "P"):
+        icc = None  # a grey or CMYK profile does not describe the RGB we produce
+    return im.convert("RGB"), alpha, icc
+
+
+def save_png(im, path, alpha=None, icc=None, **kw):
+    """Save as PNG with the source's alpha and colour profile put back."""
+    if alpha is not None:
+        im = im.copy(); im.putalpha(alpha)
+    if icc:
+        kw["icc_profile"] = icc
+    im.save(path, "PNG", **kw)
+
+
 def _tile_size(im, device):
     """Tile edge to use, or None when the whole image fits in free GPU memory.
 
@@ -246,18 +290,18 @@ def main():
 
     files = []
     for p in map(Path, a.inputs):
-        files += sorted(q for q in p.iterdir() if q.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")) if p.is_dir() else [p]
+        files += sorted(q for q in p.iterdir() if q.suffix.lower() in IMAGE_EXTS) if p.is_dir() else [p]
     methods = METHODS if a.all else [a.method]
     need = {m.split("60")[0] if "60" in m else m for m in methods if not m.startswith("l0_")}
     models = {k: load_model(k, Path(a.models), a.device) for k in need}
 
     for p in files:
-        src = Image.open(p).convert("RGB")
+        src, alpha, icc = open_image(p)
         out = Path(a.out) if a.out else p.parent / f"{p.stem}_denoise"
         out.mkdir(parents=True, exist_ok=True)
         res = run(src, methods, models, a.device, a.l0)
         for k, im in res.items():
-            im.save(out / f"{p.stem}_{k}.png")
+            save_png(im, out / f"{p.stem}_{k}.png", alpha, icc)
         if a.all:
             sheet(src, res, out / f"{p.stem}_sheet.png", a.l0)
         print(f"{p} -> {out}", flush=True)

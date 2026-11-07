@@ -430,7 +430,7 @@
           <h3>拖入图片开始去噪</h3>
           <p>放进来就自动处理，可以一次放多张，也能 Ctrl+V 粘贴。</p>
           <button class="btn primary" id="emptyPick"><svg class="i"><use href="#i-plus"/></svg>选择图片</button>
-          <small>PNG · JPEG · WebP · BMP · 图片只在这台电脑上处理</small>
+          <small>PNG · JPEG · WebP · BMP · GIF · TIFF · AVIF · 图片只在这台电脑上处理</small>
         </div>
       </div>
     </div>
@@ -445,7 +445,7 @@
 
 <div class="drop" id="dropOverlay" hidden><div>松开即可加入</div></div>
 <div class="toasts" id="toasts"></div>
-<input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/bmp" multiple hidden>
+<input type="file" id="fileInput" accept="image/*,.tif,.tiff,.tga,.avif,.jfif" multiple hidden>
 
 <dialog id="helpDlg">
   <div class="dlg">
@@ -591,20 +591,24 @@ function makeThumb(img) {
   return c.toDataURL("image/png");
 }
 async function addFiles(list, pasted) {
-  const files = [...list].filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
-  if (!files.length) return toast("没有可用的图片（PNG / JPEG / WebP / BMP）", "err");
+  const files = [...list].filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|jfif|webp|bmp|gif|tiff?|avif|tga)$/i.test(f.name));
+  if (!files.length) return toast("没有可用的图片（PNG / JPEG / WebP / BMP / GIF / TIFF / AVIF）", "err");
   let first = null;
   for (const f of files) {
-    const url = URL.createObjectURL(f);
-    let img;
-    try { img = await loadImg(url); } catch { URL.revokeObjectURL(url); toast(`${f.name || "图片"} 打不开`, "err"); continue; }
+    // the server decodes every format (EXIF rotation, 16-bit, CMYK, TIFF...) and returns a PNG:
+    // the page shows, blends and sends exactly these pixels, so the "original" always matches what was processed
+    let blob, url, img, hasAlpha = false;
+    try {
+      const r = await api("/api/convert", { method: "POST", body: f });
+      blob = await r.blob(); hasAlpha = r.headers.get("X-Alpha") === "1";
+      url = URL.createObjectURL(blob); img = await loadImg(url);
+    } catch (e) { if (url) URL.revokeObjectURL(url); toast(`${f.name || "图片"}：${e.message}`, "err", 6000); continue; }
     const w = img.naturalWidth, h = img.naturalHeight;
-    if (w * h > 16777216) { URL.revokeObjectURL(url); toast(`${f.name} 太大（${w}×${h}），最多约 1677 万像素`, "err"); continue; }
     const id = nextId++;
     const name = pasted || !f.name || f.name === "image.png" ? `粘贴的图片-${id}.png` : f.name;
     const mask = mk(); mask.width = w; mask.height = h;
     { const mc = mask.getContext("2d", { willReadFrequently: true }); mc.fillStyle = "#000"; mc.fillRect(0, 0, w, h); }
-    const it = { id, file: f, name, stem: name.replace(/\.[^.]+$/, ""), w, h, srcURL: url, srcImg: img, thumb: makeThumb(img),
+    const it = { id, file: blob, hasAlpha, name, stem: name.replace(/\.[^.]+$/, ""), w, h, srcURL: url, srcImg: img, thumb: makeThumb(img),
       params: { ...S.params }, feather: S.feather, result: null, status: "queued", err: "",
       mask, hasMask: false, undo: [], redo: [], saved: "", saveTimer: 0 };
     S.items.push(it);
