@@ -138,7 +138,7 @@ python setup_env.py --kind cpu           # 也可以手动指定：auto / cuda /
 
 装完会实际导入 torch 检查能不能用上显卡；驱动太旧时环境照样能用（CPU），并提示去更新驱动。
 
-设备在运行时自动选，需要指定就加 `--device`：NVIDIA 用 `cuda`，Apple Silicon 用 `mps`，其余用 `cpu`（三平台同一套命令）。Metal 没有 float64，所以 L0 在 MPS 上跑单精度，同一张图与 CPU 结果相比个别像素差 1 级。
+设备在运行时自动选，需要指定就加 `--device`：NVIDIA 用 `cuda`，Apple Silicon 用 `mps`，其余用 `cpu`（三平台同一套命令）。Metal 没有 float64，所以 L0 在 MPS 上跑单精度：作者在一张约 79 万像素的图上实测，和 CPU 结果相比只有 3 个像素差 2 级，其余完全一样。
 
 ## 命令行用法
 
@@ -235,6 +235,7 @@ GPT 出的写实图也有这种细碎纹理，画面细节越多、灯光越复�
 - [@AkihiM](https://github.com/AkihiM) 在 [PR #1](https://github.com/CXP-2024/gpt-anime-denoise/pull/1) 里做了第一版网页界面。现在网页工具里的强度预设、浮动笔刷工具条、多图队列、处理进度、深色外观、自动保存、保留透明通道和显存不足时分块超分等设计，都借鉴了这个 PR 的思路，感谢。PR 已合并，原版界面完整保留在 [`contrib/akihim-web-gui/`](contrib/akihim-web-gui/)，也可以直接运行。
 - [@juanhanyu](https://github.com/juanhanyu) 在 [PR #2](https://github.com/CXP-2024/gpt-anime-denoise/pull/2) 里加了一键安装依赖（`setup_env.py`，NVIDIA CUDA / AMD ROCm / CPU）和能自动找 Python 的 `去噪工具.bat`，在 [PR #3](https://github.com/CXP-2024/gpt-anime-denoise/pull/3) 里解决了 AMD 显卡上每种新尺寸都要卡约 90 秒的问题，感谢。
 - [@a705876883-arch](https://github.com/a705876883-arch) 在 [PR #4](https://github.com/CXP-2024/gpt-anime-denoise/pull/4) 里给网页工具加了磁性套索和反选，可以只给背景或只给人物去噪，感谢。
+- [@SugarCatCat](https://github.com/SugarCatCat) 在 [PR #5](https://github.com/CXP-2024/gpt-anime-denoise/pull/5) 里加了 Apple Silicon（M 系列 Mac）的 Metal 加速和对应的一键安装，感谢。
 
 ## 许可
 

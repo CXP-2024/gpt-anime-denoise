@@ -108,7 +108,8 @@ def l0_smooth(img, lam, kappa=2.0, beta_max=1e5, device="cpu", stop=None):
     """L0 gradient minimization (Xu et al. 2011) on an HxWx3 float image in [0, 1].
 
     Flattens small ripples inside flat colour areas while keeping lines and colour edges; invents no new detail.
-    On a CUDA or MPS device it runs the same maths with torch.fft (~30x faster, identical 8-bit output).
+    On a CUDA device it runs the same float64 maths with torch.fft (~30x faster, identical 8-bit output); on MPS,
+    which has no float64, it runs in float32 and a few pixels may differ from the CPU result by 1-2 levels.
     stop: optional callable checked every iteration; when it returns True, Cancelled is raised.
     """
     if str(device).startswith(("cuda", "mps")):
@@ -240,7 +241,10 @@ def _free_bytes(device):
     if str(device).startswith("cuda"):
         return torch.cuda.mem_get_info()[0]
     if str(device).startswith("mps"):
-        return torch.mps.recommended_max_memory() - torch.mps.driver_allocated_memory()
+        try:
+            return torch.mps.recommended_max_memory() - torch.mps.driver_allocated_memory()
+        except Exception:  # older PyTorch lacks recommended_max_memory: Apple GPUs share system RAM, so use that
+            pass
     try:
         import psutil
         return psutil.virtual_memory().available
