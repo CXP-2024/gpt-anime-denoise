@@ -66,8 +66,9 @@ PAGE = HERE / "app" / "index.html"
 ICON = HERE / "app" / "icon.ico"
 OUTPUT = Path(os.environ.get("ANIME_DENOISE_OUTPUT", HERE / "outputs"))
 MODELS_DIR = Path.home() / ".cache" / "gpt-anime-denoise"
-DEVICE = "cuda" if dn.torch.cuda.is_available() else "cpu"
-DEVICE_NAME = dn.torch.cuda.get_device_name(0) if DEVICE == "cuda" else "CPU"
+DEVICE = dn.default_device()
+DEVICE_NAME = (dn.torch.cuda.get_device_name(0) if DEVICE == "cuda"
+               else "Apple GPU (MPS)" if DEVICE == "mps" else "CPU")
 MAX_BYTES = 80 * 1024 * 1024
 MAX_PIXELS = 16_777_216  # 4096 x 4096
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS * 2
@@ -149,8 +150,7 @@ def process(data, down, lam, job=""):
             dn._check(stop)
             stage("L0 平滑 · 压平细碎纹理")
             out = dn.to_img(dn.l0_smooth(dn.to_arr(sr), lam, device=DEVICE, stop=stop)) if lam > 0 else sr.copy()
-            if DEVICE == "cuda":
-                dn.torch.cuda.empty_cache()
+            dn._clear(DEVICE)
             stage("整理结果")
             elapsed = time.time() - t0
             buf = io.BytesIO()
@@ -158,8 +158,7 @@ def process(data, down, lam, job=""):
         finally:
             progress.update(busy=False, stage="", job="")
             cancelled.discard(job)
-            if DEVICE == "cuda":
-                dn.torch.cuda.empty_cache()
+            dn._clear(DEVICE)
     return buf.getvalue(), elapsed, src.size, cached, alpha is not None
 
 
