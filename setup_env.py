@@ -1,7 +1,7 @@
 """One-click dependency install for gpt-anime-denoise. Needs only the Python standard library.
 
     python setup_env.py                 # detect the graphics card, show the plan, ask, install into .venv
-    python setup_env.py --kind cpu      # force a kind: auto / cuda / rocm / cpu
+    python setup_env.py --kind cpu      # force a kind: auto / cuda / rocm / mps / cpu
     python setup_env.py --yes           # don't ask
 
 What it picks:
@@ -10,12 +10,15 @@ What it picks:
 - AMD (Windows): AMD's ROCm 7.2.1 for Windows wheels, for the cards AMD lists (RX 7000 / 9000, Radeon PRO W7000 /
   AI PRO, Ryzen AI Max). They exist only for Python 3.12; when none is installed, uv downloads a private copy into
   .denoise-tools/ without touching PATH, the registry or the user profile.
+- Apple Silicon (macOS): the ordinary PyPI wheel of PyTorch already carries Metal (MPS), so nothing extra is
+  downloaded. An Intel Mac, or a Python running under Rosetta, has no Metal device and gets the CPU build.
 - Anything else: the CPU build.
 Everything goes into .venv next to this file, then torch is imported and asked for the GPU to check the result.
 """
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -27,6 +30,7 @@ ROOT = Path(__file__).resolve().parent
 VENV = ROOT / ".venv"
 TOOLS = ROOT / ".denoise-tools"
 WINDOWS = os.name == "nt"
+MACOS = sys.platform == "darwin"
 PYTHON = VENV / ("Scripts/python.exe" if WINDOWS else "bin/python")
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
 
@@ -41,14 +45,17 @@ ROCM_TORCH = ["torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl", "torchvision-
 ROCM_GPU = re.compile(r"RX\s*[79]\d{3}|Radeon\s*(AI\s*)?PRO\s*(W7\d{3}|R9\d{3})|Radeon\s*80[56]0S", re.I)
 DRIVER_PAGE = {"cuda": "https://www.nvidia.com/Download/index.aspx",
                "rocm": "https://www.amd.com/en/support/download/drivers.html"}
-SIZE = {"cuda": "约 2–3 GB", "rocm": "约 2.2 GB（另下约 20 MB 的 Python 3.12）", "cpu": "约 200 MB"}
-NAME = {"cuda": "NVIDIA CUDA", "rocm": "AMD ROCm 7.2.1", "cpu": "CPU"}
+SIZE = {"cuda": "约 2–3 GB", "rocm": "约 2.2 GB（另下约 20 MB 的 Python 3.12）",
+        "mps": "约 300 MB", "cpu": "约 200 MB"}
+NAME = {"cuda": "NVIDIA CUDA", "rocm": "AMD ROCm 7.2.1", "mps": "Apple Metal (MPS)", "cpu": "CPU"}
 
 CHECK = r"""
 import json, torch, spandrel, numpy, PIL
 ok = torch.cuda.is_available()
+mps = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
 print("CHECK" + json.dumps({"torch": torch.__version__, "hip": getattr(torch.version, "hip", None),
-                            "cuda": torch.version.cuda, "gpu": torch.cuda.get_device_name(0) if ok else None}))
+                            "cuda": torch.version.cuda, "mps": mps,
+                            "gpu": torch.cuda.get_device_name(0) if ok else None}))
 """
 
 
@@ -69,7 +76,17 @@ def pip(*args):
     return run([PYTHON, "-m", "pip", "install", "--disable-pip-version-check", *args])
 
 
+def apple_silicon():
+    """True on an arm64 Mac; False on Windows, Linux or an Intel Mac."""
+    return MACOS and platform.machine() == "arm64"
+
+
 def gpu_names():
+    if MACOS:
+        out = capture(["system_profiler", "SPDisplaysDataType"])
+        found = [x.split(":", 1)[1].strip() for x in out.splitlines()
+                 if x.strip().startswith(("Chipset Model", "Chip:"))]
+        return [x for x in found if x][:4]
     if WINDOWS:
         out = capture(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"])
     elif shutil.which("lspci"):
@@ -80,8 +97,13 @@ def gpu_names():
 
 
 def detect():
-    """NVIDIA wins over AMD, because a computer with both usually renders on the NVIDIA card."""
+    """Apple Silicon first (macOS has no CUDA), then NVIDIA over AMD, because a computer with both renders on NVIDIA."""
     names = gpu_names()
+    if apple_silicon():
+        return {"kind": "mps", "gpu": names[0] if names else "Apple Silicon", "names": names,
+                "note": "Apple GPU，用 Metal 加速；PyTorch 的普通 wheel 自带 MPS"}
+    if MACOS:  # Intel Mac: MPS support there is thin and these conv stacks gain little from it
+        return {"kind": "cpu", "gpu": None, "names": names, "note": "Intel Mac 没有可用的 MPS，使用 CPU"}
     smi = capture(["nvidia-smi"]) if shutil.which("nvidia-smi") else ""
     nvidia = next((n for n in names if "nvidia" in n.lower()), None)
     if smi or nvidia:
@@ -171,14 +193,23 @@ def install(kind, info):
             if not run([sys.executable, "-m", "venv", VENV]):
                 raise SystemExit("创建虚拟环境失败。")
         tag = "cp" + (venv_version() or "").replace(".", "")
-        indexes = cuda_builds(tag, info.get("driver_cuda")) + ["cpu"] if kind == "cuda" else ["cpu"]
         if kind == "cuda":
+            indexes = cuda_builds(tag, info.get("driver_cuda")) + ["cpu"]
             print("可用的 CUDA 版本（按优先顺序）：" + ", ".join(indexes[:-1]), flush=True)
+        elif kind == "mps":
+            indexes = [None]  # the PyPI wheel already carries Metal on macOS, no extra index needed
+        else:
+            indexes = ["cpu"]
         for index in indexes:
-            drop_other_torch(index)
-            print(f"\n安装 PyTorch（{index}）...", flush=True)
-            if pip("torch", "torchvision", "--index-url", f"{TORCH_INDEX}/{index}"):
-                break
+            if index is None:
+                print("\n安装 PyTorch（PyPI，自带 MPS）...", flush=True)
+                if pip("torch", "torchvision"):
+                    break
+            else:
+                drop_other_torch(index)
+                print(f"\n安装 PyTorch（{index}）...", flush=True)
+                if pip("torch", "torchvision", "--index-url", f"{TORCH_INDEX}/{index}"):
+                    break
         else:
             raise SystemExit("PyTorch 安装失败，见上面的信息。")
     print("\n安装其余依赖 ...", flush=True)
@@ -188,7 +219,7 @@ def install(kind, info):
 
 def main():
     ap = argparse.ArgumentParser(description="Install the dependencies into .venv for this computer's graphics card.")
-    ap.add_argument("--kind", choices=["auto", "cuda", "rocm", "cpu"], default="auto")
+    ap.add_argument("--kind", choices=["auto", "cuda", "rocm", "mps", "cpu"], default="auto")
     ap.add_argument("--yes", action="store_true", help="install without asking")
     a = ap.parse_args()
 
@@ -213,10 +244,13 @@ def main():
     if not line:
         raise SystemExit("装完了，但依赖无法导入，见上面的信息。")
     r = json.loads(line[5:])
-    backend = f"ROCm {r['hip']}" if r["hip"] else f"CUDA {r['cuda']}" if r["cuda"] else "CPU"
+    backend = (f"ROCm {r['hip']}" if r["hip"] else f"CUDA {r['cuda']}" if r["cuda"]
+               else "Metal / MPS" if r.get("mps") else "CPU")
     print(f"\n完成：torch {r['torch']} · {backend} · " + (f"显卡 {r['gpu']}" if r["gpu"] else "使用 CPU"))
     if kind in ("cuda", "rocm") and not r["gpu"]:
         print(f"环境可以用，但现在只能跑 CPU。请更新显卡驱动（{DRIVER_PAGE[kind]}），重启后再打开。")
+    if kind == "mps" and not r.get("mps"):
+        print("环境可以用，但没拿到 MPS 设备（是 arm64 的 Python 吗？Rosetta 下的 Python 没有 Metal）。现在跑 CPU。")
 
 
 if __name__ == "__main__":

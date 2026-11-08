@@ -124,7 +124,7 @@ Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOIS
 
 ```bash
 python setup_env.py                      # 识别显卡，显示方案和下载量，确认后装到本文件夹的 .venv
-python setup_env.py --kind cpu           # 也可以手动指定：auto / cuda / rocm / cpu
+python setup_env.py --kind cpu           # 也可以手动指定：auto / cuda / rocm / mps / cpu
 ```
 
 只用 Python 标准库，装之前会先问。全部装在 `.venv`（和 AMD 需要的 `.denoise-tools`）里，不改系统，删掉这两个文件夹就是卸载。
@@ -133,9 +133,12 @@ python setup_env.py --kind cpu           # 也可以手动指定：auto / cuda /
 |---|---|---|
 | NVIDIA | CUDA 版 PyTorch，自动选驱动能跑的最新 CUDA 版本 | 只要显卡驱动，不用装 CUDA Toolkit（PyTorch 自带 CUDA 运行库） |
 | AMD（Windows） | AMD 官方的 ROCm 7.2.1 for Windows 版 PyTorch，支持 RX 7000 / 9000、Radeon PRO W7000、Ryzen AI Max | 较新的 AMD 驱动（AMD 为 7.2.1 指定 26.2.2）。这套只有 Python 3.12 的包，电脑上没有 3.12 时会用 uv 下一份独立的，不改 PATH 和注册表 |
+| Apple Silicon（M 系列 Mac） | PyPI 上的普通 PyTorch wheel，自带 Metal（MPS） | — 不用装别的 |
 | 其他 | CPU 版 | — |
 
 装完会实际导入 torch 检查能不能用上显卡；驱动太旧时环境照样能用（CPU），并提示去更新驱动。
+
+设备在运行时自动选，需要指定就加 `--device`：NVIDIA 用 `cuda`，Apple Silicon 用 `mps`，其余用 `cpu`（三平台同一套命令）。Metal 没有 float64，所以 L0 在 MPS 上跑单精度，同一张图与 CPU 结果相比个别像素差 1 级。
 
 ## 命令行用法
 
@@ -156,13 +159,14 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 
 支持 PNG、JPEG、WebP、BMP、GIF（静态）、TIFF、AVIF。透明背景、EXIF 方向和 RGB 图的色彩配置（ICC）会保留，16 位图会正确转成 8 位，CMYK 按内嵌配置转成 RGB；输出都是 PNG。
 
-模型在第一次运行时自动下载到 `~/.cache/gpt-anime-denoise`（共约 100 MB，带 SHA-256 校验），也可以用 `--models` 指定已有目录。有 NVIDIA 显卡时自动用 GPU，没有（比如 Mac、集显）就用 CPU，结果一样，只是慢。
+模型在第一次运行时自动下载到 `~/.cache/gpt-anime-denoise`（共约 100 MB，带 SHA-256 校验），也可以用 `--models` 指定已有目录。有 NVIDIA 显卡时自动用 GPU，Apple Silicon 用 MPS，其余（集显、Intel Mac）用 CPU，结果一样，只是慢。
 
 实测速度（1024×1536，约 157 万像素，和 Codex 默认出的 16:9 图 1672×941 差不多大；默认方案）：
 
 | 设备 | 超分（缩 60% 后放大） | L0 平滑 | 合计 |
 |---|---|---|---|
 | RTX 5080 16GB | 0.6–1.4 秒 | 0.3–0.5 秒 | 约 1–2 秒 |
+| Apple M4 Pro（MPS） | 2.6 秒 | 0.3 秒 | 约 3 秒 |
 | 只用 CPU（Ryzen 7 9850X3D） | 13 秒 | 15 秒 | 约 28 秒 |
 
 - 有 NVIDIA 显卡时 L0 也在显卡上跑（torch.fft，双精度），和 CPU 版逐像素一样；超分用全精度 FP32（关掉了 TF32），整体结果和 CPU 版只有约 0.7% 的像素差 1–5 级。

@@ -16,6 +16,7 @@ python <skill目录>/denoise.py <图片> --method apisr          # 指定单一�
 ```
 
 - 依赖：`torch`、`spandrel`、`numpy`、`pillow`（`requirements.txt`）。模型第一次运行时自动下载到 `~/.cache/gpt-anime-denoise`，有 SHA-256 校验；已有模型目录用 `--models` 指定。
+- 设备自动选：NVIDIA 用 `cuda`，Apple Silicon（M 系列 Mac）用 `mps`，其余用 `cpu`；要指定就加 `--device cuda|mps|cpu`。
 - 输出在 `<图片目录>/<文件名>_denoise/`，尺寸和输入一致，文件名 `<文件名>_<方法>.png`。
 - L0 强度用 `--l0` 调（默认 0.001，只是推荐值）：纹理残留就调大到 0.0015–0.002，淡阴影/腮红被抹平就调小到 0.0005–0.0007。
 - 方法：`esrgan60_l0`（默认）、`esrgan60`、`cugan60_l0`、`cugan60`、`apisr`、`l0_0.001`、`l0_0.0005`。
