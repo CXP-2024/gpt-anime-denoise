@@ -25,4 +25,4 @@ python <skill目录>/denoise.py <图片> --method apisr          # 指定单一�
 1. 默认交付 `esrgan60_l0`。
 2. 用户想自己挑时跑 `--all`，把 `<文件名>_sheet.png`（原尺寸并排）发给用户；**给原尺寸并排图，不要发放大的局部**，放大后反而看不出差别。
 3. 不要改用扩散重绘、ControlNet、导向/双边滤波来去噪：会重画眼睛或把画面抹糊（见 README「试过但效果不好的方法」）。
-4. 写实照片风格不在测试范围内，效果未知。
+4. 写实照片风格的图也交付默认的 `esrgan60_l0`。RealESRGAN_x4plus、realesr-general-x4v3、SCUNet、DRUNet 都测过，效果都不如默认（见 README「写实风格的图」），不要再换成这些模型。

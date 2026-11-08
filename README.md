@@ -4,7 +4,7 @@
 
 Removes the fish-scale texture that OpenAI's GPT image models leave in anime and TV-anime style images, without redrawing the picture.
 
-**默认推荐：ESRGAN 缩 60% + L0 0.001** —— 对动漫与番剧画风有奇效。
+**默认推荐：ESRGAN 缩 60% + L0 0.001** —— 对动漫与番剧画风有奇效。写实风格的图也用这个默认方案：我们试过几种专门为照片训练的去噪 / 超分模型，都不如它（见[写实风格的图](#写实风格的图)）。
 
 **视频讲解（B 站）：** https://www.bilibili.com/video/BV1EC4B6rEMs/
 
@@ -29,6 +29,7 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
 - [命令行用法](#命令行用法)
 - [原理](#原理)
   - [试过但效果不好的方法](#试过但效果不好的方法)
+  - [写实风格的图](#写实风格的图)
 - [作为 Claude Code / Codex skill 使用](#作为-claude-code--codex-skill-使用)
 - [致谢](#致谢)
 - [许可](#许可)
@@ -176,6 +177,32 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 - 扩散模型低强度重绘（img2img）、ControlNet：能去掉纹理，但会重画眼睛等小细节，角色设计会变。
 - 频域陷波：这种纹理在频谱上没有明显的周期尖峰，没有可挖的频点。
 
+### 写实风格的图
+
+GPT 出的写实图也有这种细碎纹理，画面细节越多、灯光越复杂越明显，比如雨夜街道、霓虹城市、夜市。简单的写实图（干净背景的人像、单色墙面）本身纹理很少，不适合拿来测试。
+
+我们用 Codex 生成了 4 张高细节夜景（雨夜小巷、未来都市、夜市、钟表铺），对比默认方案和 4 个为照片训练的开源模型：
+
+| 方法 | 做法 | 平坦区纹理减少（4 张平均） | 色调偏移 |
+|---|---|---|---|
+| **默认方案** | 动漫超分 ESRGAN，缩 60% + L0 0.001 | **37%** | 3.7 |
+| [RealESRGAN_x4plus](https://github.com/xinntao/Real-ESRGAN) | Real-ESRGAN 的照片模型，缩 60% / 80% 后放大 | 29% / 20% | 4.3 / 3.6 |
+| [realesr-general-x4v3](https://github.com/xinntao/Real-ESRGAN) | Real-ESRGAN 的通用小模型，缩 60%，降噪强度 1.0 / 0.5 | 24% / 23% | 2.5 / 2.0 |
+| [SCUNet](https://github.com/cszn/SCUNet) | 针对真实噪声的盲去噪，GAN / PSNR 两个版本，原尺寸 | 13% / 12% | 2.1 / 0.8 |
+| [DRUNet](https://github.com/cszn/DPIR) | 可以指定噪声等级的去噪网络，σ = 15，原尺寸 | 27% | 0.2 |
+
+- **平坦区纹理**：画面里比较平坦的区域还剩多少高频起伏。真实的细节也会算进去，所以这个数只能作参考，最终要看原尺寸的图。
+- **色调偏移**：大半径模糊后和原图的平均色差（0–255），0 表示颜色完全没变。
+
+结论：
+- 照片模型去掉的纹理都比默认方案少，SCUNet 几乎原样留下了桌面那种颗粒质感。DRUNet 颜色最保真，但整体发软；general-x4v3 会把边缘锐化。
+- 看原尺寸对比，这几种都不如默认方案，所以没有另做写实模式。
+- 默认方案在写实图上会把皮肤这类大片柔和渐变压平一些。介意的话用「轻柔」档，或者用保护笔刷涂在脸上。
+
+下面是雨夜小巷那张的原尺寸对比（9 格：原图、默认方案、7 种照片模型的设置）：
+
+![photoreal sheet](examples/photoreal_sheet.webp)
+
 ## 作为 Claude Code / Codex skill 使用
 
 把整个目录放进 `.claude/skills/gpt-anime-denoise/`（或 Codex 的 skills 目录），`SKILL.md` 会告诉 agent 在 GPT 出完二次元图后跑这一步。
@@ -193,4 +220,5 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
   - 鲸娘 DeepSeek 角色设计来自 [ZipZipPipe《AI娘化》](https://www.pixiv.net/artworks/148186519)（作者声明 CC BY-NC-SA 4.0）。
   - 芙宁娜是《原神》角色（© HoYoverse），属于同人图。
   - 番剧截帧那张以 TV 动画《わたしが恋人になれるわけないじゃん、ムリムリ！》第 4 话官方先行场面图为构图参考（© みかみてれん・竹嶋えく／集英社・わたなれ製作委員会），画面里右下角的小字是生成时产生的乱码。
+  - 写实夜景对比图是 Codex 按文字描述生成的原创场景。
   - 示例图不适用代码的 MIT 许可，不可商用。
