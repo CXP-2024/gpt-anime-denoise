@@ -179,6 +179,7 @@
   @keyframes ants { to { stroke-dashoffset: -9; } }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
   .row2 .btn { padding: 0 8px; gap: 6px; white-space: nowrap; min-width: 0; }
+  .fb-field.off { opacity: .4; pointer-events: none; }
   .stage.space { cursor: grab !important; }
   .stage.panning { cursor: grabbing !important; }
   .stage.sizing { cursor: none !important; }
@@ -376,7 +377,7 @@
         <div class="sec-head"><h2><svg class="i"><use href="#i-shield"/></svg>局部保护</h2><span class="pill" id="protectPill">未使用</span></div>
         <button class="btn wide" id="brushBtn"><svg class="i"><use href="#i-brush"/></svg><span id="brushBtnText">保护笔刷</span><kbd id="brushKbd">B</kbd></button>
         <div class="row2">
-          <button class="btn" id="lassoBtn" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图"><svg class="i"><use href="#i-lasso"/></svg>磁性套索<kbd>L</kbd></button>
+          <button class="btn" id="lassoBtn" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图；再按 L 完成，Esc 放弃"><svg class="i"><use href="#i-lasso"/></svg><span id="lassoBtnText">磁性套索</span><kbd>L</kbd></button>
           <button class="btn" id="invertBtn" title="反选（I）：保护区和去噪区互换"><svg class="i"><use href="#i-invert"/></svg>反选<kbd>I</kbd></button>
         </div>
         <p class="hint">腮红排线、细纹理、小字被抹掉了？涂上去就按比例混回原图，边缘自动柔化，马上生效。只想去背景：用磁性套索圈住人物；只想去人物：圈完再点反选。</p>
@@ -423,7 +424,7 @@
       <div class="divider" id="div" hidden><div class="knob" id="knob" tabindex="0" role="slider" aria-label="对比分割线" aria-valuemin="0" aria-valuemax="100"><svg class="i"><use href="#i-lr"/></svg></div></div>
 
       <div class="floatbar" id="brushbar" hidden>
-        <div class="seg"><button data-t="brush" class="on" title="画笔（B）"><svg class="i"><use href="#i-brush"/></svg>画笔</button><button data-t="erase" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button><button data-t="lasso" title="磁性套索（L）：沿轮廓自动吸附，闭合后填成保护区；按住 Alt 闭合或右键 = 减去"><svg class="i"><use href="#i-lasso"/></svg>套索</button></div>
+        <div class="seg"><button data-t="brush" class="on" title="画笔（B）"><svg class="i"><use href="#i-brush"/></svg>画笔</button><button data-t="erase" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button><button data-t="lasso" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图；按住 Alt 闭合或右键闭合 = 减去"><svg class="i"><use href="#i-lasso"/></svg>套索</button></div>
         <span class="sep"></span>
         <label class="fb-field" id="bSizeField" title="画笔大小，按原图像素（按住空格 + 滚轮，或 [ ]）">大小<input type="range" id="bSize" min="2" max="300" step="1"><output class="num" id="bSizeOut"></output></label>
         <label class="fb-field" title="接下来这几笔混回原图的比例（颜色越深越强）；画过的地方再画会改成新比例；100% 就是完全不动">恢复原图<input type="range" id="bMix" min="0" max="100" step="5"><output class="num" id="bMixOut"></output></label>
@@ -492,7 +493,9 @@
       <div><span>撤销 / 重做</span><span><kbd>Ctrl</kbd><kbd>Z</kbd> <kbd>+Shift</kbd></span></div>
       <div><span>缩放</span><span>滚轮</span></div>
       <div><span>按住看全部涂抹</span><span><kbd>M</kbd></span></div>
-      <div><span>磁性套索 / 反选</span><span><kbd>L</kbd> <kbd>I</kbd></span></div>
+      <div><span>开始 / 完成磁性套索</span><span><kbd>L</kbd></span></div>
+      <div><span>放弃选框并退出套索</span><span><kbd>Esc</kbd></span></div>
+      <div><span>反选保护区</span><span><kbd>I</kbd></span></div>
       <div><span>套索闭合 / 删上个锚点</span><span><kbd>↵</kbd> <kbd>⌫</kbd></span></div>
       <div><span>全屏原图 ↔ 结果</span><span><kbd>X</kbd></span></div>
     </div>
@@ -929,8 +932,9 @@ function syncPanel() {
   $("#dlBtn").disabled = !ready;
   $("#revealBtn").disabled = !(it && it.saved);
   $("#brushBtn").disabled = !it;
-  $("#brushBtn").classList.toggle("on", S.brushMode);
-  $("#brushBtnText").textContent = S.brushMode ? "完成涂抹" : "保护笔刷";
+  const inBrush = S.brushMode && S.tool !== "lasso", inLasso = S.brushMode && S.tool === "lasso";  // two separate tools
+  $("#brushBtn").classList.toggle("on", inBrush);
+  $("#brushBtnText").textContent = inBrush ? "完成涂抹" : "保护笔刷";
   $("#brushKbd").textContent = "B";
   const masked = !!(it && it.hasMask);
   $("#protectPill").textContent = masked ? "使用中" : "未使用";
@@ -950,7 +954,8 @@ function syncPanel() {
   $("#bRedo").disabled = !(it && it.redo.length);
   $("#bClear").disabled = !masked;
   $("#lassoBtn").disabled = !it;
-  $("#lassoBtn").classList.toggle("on", S.brushMode && S.tool === "lasso");
+  $("#lassoBtn").classList.toggle("on", inLasso);
+  $("#lassoBtnText").textContent = inLasso ? "完成套索" : "磁性套索";
   $("#invertBtn").disabled = $("#bInvert").disabled = !masked;
   $("#bSaved").textContent = it && it.saved && S.brushMode ? "已保存" : $("#bSaved").textContent;
 }
@@ -983,7 +988,7 @@ function renderStrip() {
 function select(it) {
   if (S.cur === it) return;
   if (S.brushMode && S.cur) endStroke();
-  lassoCancel();
+  lassoFinish();  // keep an open outline on the image being left, like a brush stroke
   S.cur = it;
   imgB.src = it.srcURL;
   for (const c of [cvA, cvM]) fit2(c, it.w, it.h);
@@ -1122,9 +1127,11 @@ function syncBrushUI() {
   $("#bEye").title = always ? "一直显示涂抹范围（点击改成涂完自动隐藏）；按住 M 看全部涂抹" : "涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹";
   $("#brushCur").classList.toggle("erase", S.tool === "erase");
   const lasso = S.tool === "lasso";
-  $("#bSizeField").hidden = lasso;  // the lasso fills an outline: brush size does not apply
+  // the lasso fills an outline, so brush size does not apply: grey it out but keep its place, so the tool buttons don't move
+  $("#bSizeField").classList.toggle("off", lasso); $("#bSize").disabled = lasso;
+  $("#bDone").title = lasso ? "完成套索（L）：没闭合的选框会自动闭合并填好；Esc 放弃选框" : "完成涂抹（B 或 Esc）";
   $("#brushTip").textContent = lasso
-    ? "沿轮廓移动自动吸附 · 单击加锚点 · 回起点单击 / 双击 / 回车闭合 · Alt 或右键闭合 = 减去 · ⌫ 删锚点 · Esc 取消"
+    ? "沿轮廓移动自动吸附 · 单击加锚点 · 回起点单击 / 双击 / 回车闭合 · Alt 或右键闭合 = 减去 · ⌫ 删锚点 · L / 完成 = 闭合并退出 · Esc 放弃"
     : "涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · 按住 M 看全部涂抹";
   $("#lassoBtn").classList.toggle("on", S.brushMode && lasso);
 }
@@ -1132,14 +1139,14 @@ function setBrushMode(on, tool) {
   if (on && !S.cur) return;
   S.brushMode = on;
   if (tool) S.tool = tool;
-  if (!on || S.tool !== "lasso") lassoCancel();
+  if (!on || S.tool !== "lasso") lassoFinish();
   $("#brushbar").hidden = !on; $("#brushTip").hidden = !on;
   if (on) { $("#bSaved").textContent = S.cur?.saved ? "已保存" : ""; }
   syncBrushUI(); syncPanel(); render(); updateCursor();
 }
-$("#brushBtn").onclick = () => setBrushMode(!S.brushMode);
+$("#brushBtn").onclick = () => S.brushMode && S.tool !== "lasso" ? setBrushMode(false) : setBrushMode(true, S.tool === "lasso" ? "brush" : S.tool);
 $("#bDone").onclick = () => setBrushMode(false);
-$$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; if (S.tool !== "lasso") lassoCancel(); syncBrushUI(); syncPanel(); render(); updateCursor(); });
+$$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; if (S.tool !== "lasso") lassoFinish(); syncBrushUI(); syncPanel(); render(); updateCursor(); });
 $("#lassoBtn").onclick = () => S.brushMode && S.tool === "lasso" ? setBrushMode(false) : setBrushMode(true, "lasso");
 $("#invertBtn").onclick = $("#bInvert").onclick = () => invertMask();
 $("#bEye").onclick = () => {
@@ -1217,8 +1224,8 @@ function flashAll(ms) {  // briefly show the whole protected area (after an inve
 function invertMask() {
   const it = S.cur;
   if (!it) return;
+  lassoFinish();  // an outline still open is what the user means to invert
   if (!it.hasMask) return toast("还没有保护区：先用磁性套索圈住人物（或用笔刷涂），再反选", "", 3800);
-  lassoCancel();
   const c = g2(it.mask, true), im = c.getImageData(0, 0, it.w, it.h), d = im.data;
   let max = 0;
   for (let i = 0; i < d.length; i += 4) if (d[i] > max) max = d[i];
@@ -1389,6 +1396,10 @@ function lassoBack() {
   L.live = [];
   if (L.want) lassoUpdate(); else lassoDraw();
 }
+function lassoFinish() {  // leaving the lasso keeps what was drawn, like a brush stroke (Esc discards instead)
+  if (L.on && L.it === S.cur && L.pts.length + L.live.length >= 6) lassoClose(false);
+  else lassoCancel();
+}
 function lassoCancel() {
   if (L.raf) cancelAnimationFrame(L.raf);
   Object.assign(L, { on: false, it: null, pts: [], anchors: [], live: [], want: null, near: false, raf: 0 });
@@ -1530,12 +1541,15 @@ addEventListener("keydown", e => {
     // B toggles: enter painting; in painting with the eraser -> back to brush; with the brush -> finish
     b: () => { if (e.repeat) return; if (!S.brushMode) setBrushMode(true, "brush"); else if (S.tool !== "brush") setBrushMode(true, "brush"); else setBrushMode(false); },
     e: () => setBrushMode(true, "erase"),
-    l: () => { if (!e.repeat) setBrushMode(true, "lasso"); },
+    // L toggles the lasso (an open outline is closed and kept); Esc leaves the brush or the lasso (an open outline is dropped)
+    l: () => { if (!e.repeat) S.brushMode && S.tool === "lasso" ? setBrushMode(false) : setBrushMode(true, "lasso"); },
     i: () => { if (!e.repeat) invertMask(); },
-    enter: () => { if (L.on) lassoClose(false); },
-    backspace: () => { if (L.on) lassoBack(); },
-    delete: () => { if (L.on) lassoBack(); },
-    escape: () => L.on ? lassoCancel() : setBrushMode(false),
+    ...(L.on && {  // only while an outline is open, so Enter still presses a focused button otherwise
+      enter: () => lassoClose(false),
+      backspace: lassoBack,
+      delete: lassoBack,
+    }),
+    escape: () => { lassoCancel(); setBrushMode(false); },
     "[": () => setBrushSize(Math.min(S.brush - 1, S.brush / 1.2), true),
     "]": () => setBrushSize(Math.max(S.brush + 1, S.brush * 1.2), true),
     f: fit, "0": () => zoomAt(1, null, null, true),
