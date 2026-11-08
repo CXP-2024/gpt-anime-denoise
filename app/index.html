@@ -168,6 +168,17 @@
     background-image: radial-gradient(var(--stage-dot) 1px, transparent 1.2px); background-size: 18px 18px; user-select: none; touch-action: none; }
   .stage.has { cursor: grab; }
   .stage.paint { cursor: none; }
+  .stage.lasso { cursor: crosshair; }
+  .lasso-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 6; pointer-events: none; overflow: visible; }
+  .lasso-svg path { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+  .lasso-svg .ant-b { stroke: rgba(0, 0, 0, .8); }
+  .lasso-svg .ant-w { stroke: #fff; stroke-dasharray: 5 4; animation: ants .5s linear infinite; }
+  .lasso-svg .anc { fill: #fff; stroke: rgba(0, 0, 0, .8); stroke-width: 1; }
+  .lasso-svg circle { fill: #fff; stroke: rgba(0, 0, 0, .8); stroke-width: 1.2; }
+  .lasso-svg circle.near { fill: rgb(var(--mask)); stroke: #fff; stroke-width: 2; }
+  @keyframes ants { to { stroke-dashoffset: -9; } }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .row2 .btn { padding: 0 8px; gap: 6px; white-space: nowrap; min-width: 0; }
   .stage.space { cursor: grab !important; }
   .stage.panning { cursor: grabbing !important; }
   .stage.sizing { cursor: none !important; }
@@ -305,6 +316,8 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
   <symbol id="i-lr" viewBox="0 0 24 24"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></symbol>
+  <symbol id="i-lasso" viewBox="0 0 24 24"><path d="M6.6 14.2C4.4 13.1 3 11.4 3 9.5 3 6 7 3.5 12 3.5s9 2.5 9 6-4 6-9 6c-1.1 0-2.2-.1-3.2-.4"/><circle cx="7.6" cy="15.6" r="1.6"/><path d="M7.4 17.2c.2 1.6 1.4 2.6 3.1 3.1"/></symbol>
+  <symbol id="i-invert" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M12 3.5h5.5a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H12z" fill="currentColor"/></symbol>
 </svg>
 
 <div class="app">
@@ -362,7 +375,11 @@
       <section class="sec">
         <div class="sec-head"><h2><svg class="i"><use href="#i-shield"/></svg>局部保护</h2><span class="pill" id="protectPill">未使用</span></div>
         <button class="btn wide" id="brushBtn"><svg class="i"><use href="#i-brush"/></svg><span id="brushBtnText">保护笔刷</span><kbd id="brushKbd">B</kbd></button>
-        <p class="hint">腮红排线、细纹理、小字被抹掉了？涂上去就按比例混回原图，边缘自动柔化，马上生效。</p>
+        <div class="row2">
+          <button class="btn" id="lassoBtn" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图"><svg class="i"><use href="#i-lasso"/></svg>磁性套索<kbd>L</kbd></button>
+          <button class="btn" id="invertBtn" title="反选（I）：保护区和去噪区互换"><svg class="i"><use href="#i-invert"/></svg>反选<kbd>I</kbd></button>
+        </div>
+        <p class="hint">腮红排线、细纹理、小字被抹掉了？涂上去就按比例混回原图，边缘自动柔化，马上生效。只想去背景：用磁性套索圈住人物；只想去人物：圈完再点反选。</p>
         <div class="protect-sum" id="protectSum" hidden><span class="dot"></span><span id="protectSumText"></span><button class="linkbtn" id="clearMask">清除</button></div>
       </section>
     </div>
@@ -406,15 +423,16 @@
       <div class="divider" id="div" hidden><div class="knob" id="knob" tabindex="0" role="slider" aria-label="对比分割线" aria-valuemin="0" aria-valuemax="100"><svg class="i"><use href="#i-lr"/></svg></div></div>
 
       <div class="floatbar" id="brushbar" hidden>
-        <div class="seg"><button data-t="brush" class="on" title="画笔（B）"><svg class="i"><use href="#i-brush"/></svg>画笔</button><button data-t="erase" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button></div>
+        <div class="seg"><button data-t="brush" class="on" title="画笔（B）"><svg class="i"><use href="#i-brush"/></svg>画笔</button><button data-t="erase" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button><button data-t="lasso" title="磁性套索（L）：沿轮廓自动吸附，闭合后填成保护区；按住 Alt 闭合或右键 = 减去"><svg class="i"><use href="#i-lasso"/></svg>套索</button></div>
         <span class="sep"></span>
-        <label class="fb-field" title="画笔大小，按原图像素（按住空格 + 滚轮，或 [ ]）">大小<input type="range" id="bSize" min="2" max="300" step="1"><output class="num" id="bSizeOut"></output></label>
+        <label class="fb-field" id="bSizeField" title="画笔大小，按原图像素（按住空格 + 滚轮，或 [ ]）">大小<input type="range" id="bSize" min="2" max="300" step="1"><output class="num" id="bSizeOut"></output></label>
         <label class="fb-field" title="接下来这几笔混回原图的比例（颜色越深越强）；画过的地方再画会改成新比例；100% 就是完全不动">恢复原图<input type="range" id="bMix" min="0" max="100" step="5"><output class="num" id="bMixOut"></output></label>
         <label class="fb-field" title="边缘渐变宽度；0 是硬边">柔边<input type="range" id="bFeather" min="0" max="150" step="2"><output class="num" id="bFeatherOut"></output></label>
         <span class="sep"></span>
         <button class="ib" id="bUndo" title="撤销（Ctrl+Z）"><svg class="i"><use href="#i-undo"/></svg></button>
         <button class="ib" id="bRedo" title="重做（Ctrl+Shift+Z）"><svg class="i"><use href="#i-redo"/></svg></button>
         <button class="ib" id="bEye" title="涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹"><svg class="i"><use id="bEyeIcon" href="#i-eye-auto"/></svg></button>
+        <button class="ib" id="bInvert" title="反选（I）：保护区和去噪区互换（可撤销）"><svg class="i"><use href="#i-invert"/></svg></button>
         <button class="ib" id="bClear" title="清除全部（可撤销）"><svg class="i"><use href="#i-trash"/></svg></button>
         <span class="saved" id="bSaved"></span>
         <button class="done-btn" id="bDone" title="完成涂抹（B 或 Esc）">完成</button>
@@ -422,6 +440,7 @@
       <div class="tip" id="brushTip" hidden>涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · 按住 M 看全部涂抹</div>
 
       <div class="progress" id="prog" hidden><div class="bar"></div><div class="pcard"><span class="spin"></span><span id="progText">去噪中</span><span class="t num" id="progTime"></span></div></div>
+      <svg class="lasso-svg" id="lassoSvg" hidden aria-hidden="true"><path class="ant-b" id="lzB"/><path class="ant-w" id="lzW"/><path class="anc" id="lzA"/><circle id="lzStart" r="4.5"/></svg>
       <div class="brush" id="brushCur" hidden></div>
       <div class="size-tip num" id="sizeTip" hidden></div>
 
@@ -473,6 +492,8 @@
       <div><span>撤销 / 重做</span><span><kbd>Ctrl</kbd><kbd>Z</kbd> <kbd>+Shift</kbd></span></div>
       <div><span>缩放</span><span>滚轮</span></div>
       <div><span>按住看全部涂抹</span><span><kbd>M</kbd></span></div>
+      <div><span>磁性套索 / 反选</span><span><kbd>L</kbd> <kbd>I</kbd></span></div>
+      <div><span>套索闭合 / 删上个锚点</span><span><kbd>↵</kbd> <kbd>⌫</kbd></span></div>
       <div><span>全屏原图 ↔ 结果</span><span><kbd>X</kbd></span></div>
     </div>
     <div class="dlg-foot">
@@ -511,7 +532,7 @@ const S = {
   items: [], cur: null, queue: [], running: null, info: {},
   view: "cmp", base: "orig", split: 0.5, vp: null, lastFit: null,
   brushMode: false, tool: "brush", eyeMode: recall("eyeMode", "auto"), flash: false, painting: false, overlayWhich: "all", overlayFor: null,
-  peekOrig: false, peekMask: false, space: false, spaceMode: "", sizeAt: null,
+  peekOrig: false, peekMask: false, flashAll: false, space: false, spaceMode: "", sizeAt: null,
   brush: BRUSH_DEFAULTS.brush, params: recall("params", { down: 60, l0: 0.001 }),
   mix: BRUSH_DEFAULTS.mix, feather: BRUSH_DEFAULTS.feather, toldBrush: recall("toldBrush", false),
 };
@@ -928,6 +949,9 @@ function syncPanel() {
   $("#bUndo").disabled = !(it && it.undo.length);
   $("#bRedo").disabled = !(it && it.redo.length);
   $("#bClear").disabled = !masked;
+  $("#lassoBtn").disabled = !it;
+  $("#lassoBtn").classList.toggle("on", S.brushMode && S.tool === "lasso");
+  $("#invertBtn").disabled = $("#bInvert").disabled = !masked;
   $("#bSaved").textContent = it && it.saved && S.brushMode ? "已保存" : $("#bSaved").textContent;
 }
 
@@ -959,6 +983,7 @@ function renderStrip() {
 function select(it) {
   if (S.cur === it) return;
   if (S.brushMode && S.cur) endStroke();
+  lassoCancel();
   S.cur = it;
   imgB.src = it.srcURL;
   for (const c of [cvA, cvM]) fit2(c, it.w, it.h);
@@ -993,7 +1018,8 @@ function zoomAt(f, cx, cy, abs) {
 function render() {
   const it = S.cur, has = !!(it && S.vp);
   stage.classList.toggle("has", has);
-  stage.classList.toggle("paint", has && S.brushMode && !S.space);
+  stage.classList.toggle("paint", has && S.brushMode && !S.space && S.tool !== "lasso");
+  stage.classList.toggle("lasso", has && S.brushMode && !S.space && S.tool === "lasso");
   // Space held: hand to pan; once the wheel is used it becomes "resize" and only the brush circle shows
   stage.classList.toggle("space", has && S.space && S.spaceMode !== "size");
   stage.classList.toggle("sizing", has && S.spaceMode === "size");
@@ -1004,7 +1030,7 @@ function render() {
   $("#zPct").textContent = has ? Math.round(S.vp.s * 100) + "%" : "—";
   const hasOut = !!(it && it.result);
   for (const b of $$("#viewSeg button")) { b.classList.toggle("on", b.dataset.v === S.view); b.disabled = !hasOut && b.dataset.v !== "before"; }
-  if (!has) { $("#baseSeg").hidden = true; $("#viewHint").textContent = ""; return; }
+  if (!has) { $("#baseSeg").hidden = true; $("#viewHint").textContent = ""; lassoDraw(); return; }
   const { s, x, y } = S.vp, W = stage.clientWidth;
   const tf = `translate(${x}px, ${y}px) scale(${s})`;
   for (const el of [imgB, cvA, cvM]) { el.style.width = it.w + "px"; el.style.height = it.h + "px"; el.style.transform = tf; el.classList.toggle("px", s >= 2); }
@@ -1024,7 +1050,7 @@ function render() {
   const flipHint = hasOut && m !== "cmp" && !S.peekOrig ? " · X 切换" : "";
   $("#tagL").textContent = leftDen ? "未保护结果" : "原图" + (hasOut ? flipHint : waiting);
   $("#tagR").textContent = (it.hasMask ? "结果 · 含保护" : "结果") + flipHint;
-  const showAll = S.peekMask || (S.brushMode && S.eyeMode === "always") || (S.painting && strokeTool === "erase");
+  const showAll = S.peekMask || S.flashAll || (S.brushMode && S.eyeMode === "always") || (S.painting && strokeTool === "erase");
   const showStroke = !showAll && (S.painting || S.flash) && strokeTool === "brush";
   const tintWant = showAll ? "all" : showStroke ? "stroke" : null;
   if (tintWant && (S.overlayWhich !== tintWant || S.overlayFor !== it)) drawOverlay(it, tintWant);
@@ -1033,6 +1059,7 @@ function render() {
   $("#baseSeg").hidden = !(hasOut && it.hasMask && m === "cmp");
   for (const b of $$("#baseSeg button")) b.classList.toggle("on", b.dataset.b === S.base);
   $("#viewHint").textContent = !hasOut ? "还没去噪完，先显示原图" : m === "cmp" ? `左：${leftDen ? "未保护结果" : "原图"}　右：${it.hasMask ? "结果（含保护）" : "结果"}` : m === "before" ? "原图" : "结果 · 就是下载的那张";
+  lassoDraw();
 }
 $$("#viewSeg button").forEach(b => b.onclick = () => { S.view = b.dataset.v; render(); });
 $$("#baseSeg button").forEach(b => b.onclick = () => { S.base = b.dataset.b; render(); });
@@ -1064,7 +1091,11 @@ stage.addEventListener("wheel", e => {
   }
   zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top);
 }, { passive: false });
-stage.addEventListener("dblclick", e => { if (!S.brushMode && !onUI(e)) fit(); });
+stage.addEventListener("dblclick", e => {
+  if (onUI(e)) return;
+  if (L.on) lassoClose(e.altKey);
+  else if (!S.brushMode) fit();
+});
 new ResizeObserver(() => {
   if (!S.vp) return render();
   const f = S.lastFit, v = S.vp;
@@ -1090,18 +1121,27 @@ function syncBrushUI() {
   $("#bEyeIcon").setAttribute("href", always ? "#i-eye" : "#i-eye-auto");
   $("#bEye").title = always ? "一直显示涂抹范围（点击改成涂完自动隐藏）；按住 M 看全部涂抹" : "涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹";
   $("#brushCur").classList.toggle("erase", S.tool === "erase");
+  const lasso = S.tool === "lasso";
+  $("#bSizeField").hidden = lasso;  // the lasso fills an outline: brush size does not apply
+  $("#brushTip").textContent = lasso
+    ? "沿轮廓移动自动吸附 · 单击加锚点 · 回起点单击 / 双击 / 回车闭合 · Alt 或右键闭合 = 减去 · ⌫ 删锚点 · Esc 取消"
+    : "涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · 按住 M 看全部涂抹";
+  $("#lassoBtn").classList.toggle("on", S.brushMode && lasso);
 }
 function setBrushMode(on, tool) {
   if (on && !S.cur) return;
   S.brushMode = on;
   if (tool) S.tool = tool;
+  if (!on || S.tool !== "lasso") lassoCancel();
   $("#brushbar").hidden = !on; $("#brushTip").hidden = !on;
   if (on) { $("#bSaved").textContent = S.cur?.saved ? "已保存" : ""; }
   syncBrushUI(); syncPanel(); render(); updateCursor();
 }
 $("#brushBtn").onclick = () => setBrushMode(!S.brushMode);
 $("#bDone").onclick = () => setBrushMode(false);
-$$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; syncBrushUI(); updateCursor(); });
+$$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; if (S.tool !== "lasso") lassoCancel(); syncBrushUI(); syncPanel(); render(); updateCursor(); });
+$("#lassoBtn").onclick = () => S.brushMode && S.tool === "lasso" ? setBrushMode(false) : setBrushMode(true, "lasso");
+$("#invertBtn").onclick = $("#bInvert").onclick = () => invertMask();
 $("#bEye").onclick = () => {
   S.eyeMode = S.eyeMode === "always" ? "auto" : "always"; store("eyeMode", S.eyeMode);
   toast(S.eyeMode === "always" ? "涂抹范围：一直显示" : "涂抹范围：涂完自动隐藏（按住 M 看全部）", "", 2200);
@@ -1164,7 +1204,255 @@ function endStroke() {
   }
   composite(); scheduleSave(it); syncPanel(); renderStrip();
 }
-let flashTimer = 0;
+let flashTimer = 0, flashAllTimer = 0;
+function flashAll(ms) {  // briefly show the whole protected area (after an invert or a lasso subtraction)
+  if (S.eyeMode === "always") return render();
+  S.flashAll = true; clearTimeout(flashAllTimer); render();
+  flashAllTimer = setTimeout(() => { S.flashAll = false; render(); }, ms);
+}
+
+/* ---------------- invert ---------------- */
+// Swaps protected and denoised areas, keeping the strength the user chose: grey v -> max - v.
+// Lasso the character -> only the background is denoised; invert -> only the character is.
+function invertMask() {
+  const it = S.cur;
+  if (!it) return;
+  if (!it.hasMask) return toast("还没有保护区：先用磁性套索圈住人物（或用笔刷涂），再反选", "", 3800);
+  lassoCancel();
+  const c = g2(it.mask, true), im = c.getImageData(0, 0, it.w, it.h), d = im.data;
+  let max = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] > max) max = d[i];
+  pushUndo(it);
+  for (let i = 0; i < d.length; i += 4) { const v = max - d[i]; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+  c.putImageData(im, 0, 0);
+  it.hasMask = hasPixels(it);
+  composite(); scheduleSave(it); syncPanel(); renderStrip();
+  flashAll(1200);
+  toast(it.hasMask ? "已反选：原来去噪的地方改为保持原图，原来保持原图的地方改为去噪（Ctrl+Z 可撤销）" : "反选后没有保护区了（整张都已保护时反选 = 整张去噪）", "", 4200);
+}
+
+/* ---------------- magnetic lasso ---------------- */
+// Live-wire ("intelligent scissors"): the outline from the last anchor to the cursor is the cheapest route over an
+// edge-cost map, so it hugs the strongest nearby contour. Anchors drop automatically as the cursor travels.
+// Closing fills the outline into the protect mask at the current "恢复原图" strength (Alt / right click: subtract).
+const L = { on: false, it: null, pts: [], anchors: [], live: [], want: null, near: false, raf: 0 };
+function blur3(a, w, h) {
+  const t = new Uint16Array(a.length), o = new Uint8Array(a.length);
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    for (let x = 0; x < w; x++) { const i = r + x; t[i] = a[i] + a[x > 0 ? i - 1 : i] + a[x < w - 1 ? i + 1 : i]; }
+  }
+  for (let y = 0; y < h; y++) {
+    const u = y > 0 ? -w : 0, dn = y < h - 1 ? w : 0, r = y * w;
+    for (let x = 0; x < w; x++) { const i = r + x; o[i] = (t[i] + t[i + u] + t[i + dn]) / 9; }
+  }
+  return o;
+}
+function edgeMap(it) {
+  // the denoised result has clean outlines; the original still has the texture noise this tool removes
+  const src = it.result ? it.result.img : it.srcImg;
+  if (it.edge && it.edge.src === src) return it.edge.e;
+  const w = it.w, h = it.h, n = w * h;
+  const c = mk(); c.width = w; c.height = h;
+  const cc = c.getContext("2d", { willReadFrequently: true });
+  cc.drawImage(src, 0, 0);
+  const d = cc.getImageData(0, 0, w, h).data;
+  const lum = new Uint8Array(n), alp = new Uint8Array(n);
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    const a = d[j + 3];
+    alp[i] = a;
+    lum[i] = ((d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8) * a / 255;
+  }
+  const bl = blur3(lum, w, h), e = new Uint8Array(n);
+  const sob = (p, i) => {
+    const t = i - w, b = i + w;
+    const gx = p[t + 1] + 2 * p[i + 1] + p[b + 1] - p[t - 1] - 2 * p[i - 1] - p[b - 1];
+    const gy = p[b - 1] + 2 * p[b] + p[b + 1] - p[t - 1] - 2 * p[t] - p[t + 1];
+    return Math.abs(gx) + Math.abs(gy);
+  };
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1, i = y * w + 1; x < w - 1; x++, i++) e[i] = Math.min(255, Math.max(sob(bl, i), sob(alp, i)) / 4);  // transparent edges count too
+  it.edge = { src, e };
+  return e;
+}
+function liveWire(e, w, h, a, b) {
+  // Dijkstra over a window around the two points; returns [x0, y0, x1, y1, ...] from a to b
+  const m = 24;
+  const x0 = Math.max(0, Math.min(a[0], b[0]) - m), y0 = Math.max(0, Math.min(a[1], b[1]) - m);
+  const x1 = Math.min(w - 1, Math.max(a[0], b[0]) + m), y1 = Math.min(h - 1, Math.max(a[1], b[1]) + m);
+  const W = x1 - x0 + 1, H = y1 - y0 + 1, N = W * H;
+  if (N > 1.5e6) return [a[0], a[1], b[0], b[1]];  // a huge jump: draw it straight rather than freeze
+  let mx = 1;  // local normalisation: the strongest edge in view is cheapest, so faint outlines still attract
+  for (let y = y0; y <= y1; y++) for (let x = x0, i = y * w + x0; x <= x1; x++, i++) if (e[i] > mx) mx = e[i];
+  const cost = new Float32Array(N);
+  for (let y = 0; y < H; y++)
+    for (let x = 0, i = (y + y0) * w + x0, k = y * W; x < W; x++, i++, k++) { const f = 1 - e[i] / mx; cost[k] = 0.1 + f * f; }
+  const dist = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
+  const s = (a[1] - y0) * W + a[0] - x0, t = (b[1] - y0) * W + b[0] - x0;
+  let hk = new Float32Array(1024), hv = new Int32Array(1024), hn = 0;
+  const push = (v, k) => {
+    if (hn === hk.length) { const k2 = new Float32Array(hn * 2), v2 = new Int32Array(hn * 2); k2.set(hk); v2.set(hv); hk = k2; hv = v2; }
+    let i = hn++;
+    while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; }
+    hk[i] = k; hv[i] = v;
+  };
+  const pop = () => {
+    const top = hv[0], k = hk[--hn], v = hv[hn];
+    let i = 0;
+    for (;;) {
+      let c = 2 * i + 1;
+      if (c >= hn) break;
+      if (c + 1 < hn && hk[c + 1] < hk[c]) c++;
+      if (hk[c] >= k) break;
+      hk[i] = hk[c]; hv[i] = hv[c]; i = c;
+    }
+    hk[i] = k; hv[i] = v;
+    return top;
+  };
+  dist[s] = 0; push(s, 0);
+  while (hn) {
+    const u = pop();
+    if (done[u]) continue;
+    done[u] = 1;
+    if (u === t) break;
+    const ux = u % W, uy = (u - ux) / W, du = dist[u];
+    for (let dy = -1; dy <= 1; dy++) {
+      const ny = uy + dy;
+      if (ny < 0 || ny >= H) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = ux + dx;
+        if ((!dx && !dy) || nx < 0 || nx >= W) continue;
+        const v = ny * W + nx;
+        if (done[v]) continue;
+        const nd = du + cost[v] * (dx && dy ? 1.4142 : 1);
+        if (nd < dist[v]) { dist[v] = nd; prev[v] = u; push(v, nd); }
+      }
+    }
+  }
+  const out = [];
+  for (let v = t; v !== -1; v = v === s ? -1 : prev[v]) out.push(v % W + x0, ((v - v % W) / W) + y0);
+  const pts = [];
+  for (let i = out.length - 2; i >= 0; i -= 2) pts.push(out[i], out[i + 1]);
+  return pts;
+}
+function clampPt(it, p) { return [Math.min(it.w - 1, Math.max(0, Math.floor(p[0]))), Math.min(it.h - 1, Math.max(0, Math.floor(p[1])))]; }
+function snap(e, it, p) {
+  // pull the point onto the strongest edge within a few screen pixels (if there is a real edge there)
+  const r = Math.min(24, Math.max(2, Math.round(10 / S.vp.s)));
+  let bx = p[0], by = p[1], best = -1;
+  for (let y = Math.max(0, p[1] - r); y <= Math.min(it.h - 1, p[1] + r); y++)
+    for (let x = Math.max(0, p[0] - r); x <= Math.min(it.w - 1, p[0] + r); x++) {
+      const d2 = (x - p[0]) ** 2 + (y - p[1]) ** 2;
+      if (d2 > r * r) continue;
+      const sc = e[y * it.w + x] - 16 * Math.sqrt(d2) / r;
+      if (sc > best) { best = sc; bx = x; by = y; }
+    }
+  return best >= 20 ? [bx, by] : p;
+}
+const lassoLast = () => [L.pts[L.pts.length - 2], L.pts[L.pts.length - 1]];
+function lassoCommit() {
+  if (L.live.length > 2) for (let i = 2; i < L.live.length; i++) L.pts.push(L.live[i]);  // live[0..1] is the last anchor
+  L.anchors.push(L.pts.length / 2 - 1);
+  L.live = [];
+}
+function lassoUpdate() {
+  L.raf = 0;
+  const it = S.cur;
+  if (!L.on || it !== L.it || !L.want || !S.vp) return;
+  const e = edgeMap(it), a = lassoLast(), raw = clampPt(it, L.want), p = snap(e, it, raw);
+  const n = L.pts.length / 2 + L.live.length / 2;
+  L.near = n > 8 && Math.hypot(raw[0] - L.pts[0], raw[1] - L.pts[1]) * S.vp.s < 10;
+  L.live = L.near ? liveWire(e, it.w, it.h, a, [L.pts[0], L.pts[1]]) : liveWire(e, it.w, it.h, a, p);
+  if (!L.near && Math.hypot(p[0] - a[0], p[1] - a[1]) * S.vp.s > 48) lassoCommit();  // automatic anchor
+  lassoDraw();
+}
+function lassoMove(pt) { L.want = pt; if (!L.raf) L.raf = requestAnimationFrame(lassoUpdate); }
+function lassoDown(pt, ev) {
+  const it = S.cur, raw = clampPt(it, pt);
+  if (!L.on) {
+    if (ev.button !== 0) return;
+    const p = snap(edgeMap(it), it, raw);
+    Object.assign(L, { on: true, it, pts: [p[0], p[1]], anchors: [0], live: [], want: pt, near: false });
+    lassoDraw();
+    return;
+  }
+  if (ev.button === 2) return lassoClose(true);
+  if (L.raf) { cancelAnimationFrame(L.raf); L.raf = 0; }
+  L.want = pt; lassoUpdate();
+  if (L.near) return lassoClose(ev.altKey);
+  lassoCommit(); lassoDraw();
+}
+function lassoBack() {
+  if (L.anchors.length <= 1) return lassoCancel();
+  L.anchors.pop();
+  L.pts.length = (L.anchors[L.anchors.length - 1] + 1) * 2;
+  L.live = [];
+  if (L.want) lassoUpdate(); else lassoDraw();
+}
+function lassoCancel() {
+  if (L.raf) cancelAnimationFrame(L.raf);
+  Object.assign(L, { on: false, it: null, pts: [], anchors: [], live: [], want: null, near: false, raf: 0 });
+  lassoDraw();
+}
+function lassoClose(sub) {
+  const it = L.it;
+  if (!L.on || it !== S.cur) return lassoCancel();
+  if (L.live.length) lassoCommit();
+  const e = edgeMap(it), back = liveWire(e, it.w, it.h, lassoLast(), [L.pts[0], L.pts[1]]);
+  const poly = L.pts.concat(back.slice(2));
+  lassoCancel();
+  let area = 0;
+  for (let i = 0, n = poly.length; i < n; i += 2) { const j = (i + 2) % n; area += poly[i] * poly[j + 1] - poly[j] * poly[i + 1]; }
+  if (poly.length < 6 || Math.abs(area) / 2 < 4) return;
+  const path = new Path2D();
+  path.moveTo(poly[0] + 0.5, poly[1] + 0.5);
+  for (let i = 2; i < poly.length; i += 2) path.lineTo(poly[i] + 0.5, poly[i + 1] + 0.5);
+  path.closePath();
+  const v = sub ? 0 : Math.round(S.mix * 2.55), col = `rgb(${v},${v},${v})`;
+  pushUndo(it);
+  const targets = [g2(it.mask, true)];
+  if (!sub) {  // also into the current-stroke canvas, for its tint
+    fit2(strokeC, it.w, it.h);
+    const sc = g2(strokeC); sc.fillStyle = "#000"; sc.fillRect(0, 0, it.w, it.h);
+    targets.push(sc);
+  }
+  for (const c of targets) {
+    c.globalCompositeOperation = "source-over";
+    c.fillStyle = c.strokeStyle = col; c.lineWidth = 1; c.lineJoin = "round";
+    c.fill(path); c.stroke(path);  // the outline pixels sit on the edge itself: include them
+  }
+  it.hasMask = sub ? hasPixels(it) : true;
+  composite(); scheduleSave(it); syncPanel(); renderStrip();
+  if (sub) flashAll(900);
+  else if (S.eyeMode === "auto") {  // show the filled area a moment, like a brush stroke
+    strokeTool = "brush"; S.flash = true; clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { S.flash = false; render(); }, 900);
+    render();
+  }
+}
+function lassoDraw() {
+  const svg = $("#lassoSvg");
+  const show = L.on && S.cur && S.cur === L.it && S.vp && L.pts.length;
+  svg.toggleAttribute("hidden", !show);
+  if (!show) return;
+  const { s, x, y } = S.vp;
+  const X = v => ((v + 0.5) * s + x).toFixed(1), Y = v => ((v + 0.5) * s + y).toFixed(1);
+  const all = L.live.length ? L.pts.concat(L.live.slice(2)) : L.pts;
+  let d = "", lx = -1e9, ly = -1e9;
+  for (let i = 0; i < all.length; i += 2) {
+    const sx = (all[i] + 0.5) * s, sy = (all[i + 1] + 0.5) * s;
+    if (i && i < all.length - 2 && Math.abs(sx - lx) < 1.5 && Math.abs(sy - ly) < 1.5) continue;  // thin out for long outlines
+    d += (i ? "L" : "M") + X(all[i]) + " " + Y(all[i + 1]);
+    lx = sx; ly = sy;
+  }
+  $("#lzB").setAttribute("d", d); $("#lzW").setAttribute("d", d);
+  let a = "";
+  for (const k of L.anchors.slice(1)) a += `M${(+X(L.pts[k * 2]) - 2.5).toFixed(1)} ${(+Y(L.pts[k * 2 + 1]) - 2.5).toFixed(1)}h5v5h-5z`;
+  $("#lzA").setAttribute("d", a);
+  const st = $("#lzStart");
+  st.setAttribute("cx", X(L.pts[0])); st.setAttribute("cy", Y(L.pts[1]));
+  st.classList.toggle("near", L.near);
+}
 
 /* ---------------- pointer ---------------- */
 let drag = null, cursorPt = null;
@@ -1173,7 +1461,7 @@ const toImg = (e, r) => [(e.clientX - r.left - S.vp.x) / S.vp.s, (e.clientY - r.
 function updateCursor() {
   const b = $("#brushCur");
   const pt = S.spaceMode === "size" ? S.sizeAt : cursorPt;
-  if (!S.brushMode || !S.vp || !pt || (drag && drag.t === "pan") || (S.space && S.spaceMode !== "size")) { b.hidden = true; return; }
+  if (!S.brushMode || S.tool === "lasso" || !S.vp || !pt || (drag && drag.t === "pan") || (S.space && S.spaceMode !== "size")) { b.hidden = true; return; }
   const d = S.brush * S.vp.s;
   b.hidden = false; b.style.width = b.style.height = d + "px";
   b.style.left = pt[0] + "px"; b.style.top = pt[1] + "px";
@@ -1188,6 +1476,7 @@ stage.addEventListener("pointerdown", e => {
   stage.setPointerCapture(e.pointerId);
   if (e.button === 1 || S.space) { drag = { t: "pan", x: e.clientX, y: e.clientY }; if (S.space) { S.spaceMode = "pan"; $("#sizeTip").hidden = true; } }
   else if (e.button === 0 && (onKnob || (onLine && !S.brushMode))) drag = { t: "split" };
+  else if (S.brushMode && S.tool === "lasso" && (e.button === 0 || e.button === 2)) lassoDown(toImg(e, r), e);
   else if (S.brushMode && (e.button === 0 || e.button === 2)) {
     strokeTool = e.button === 2 ? "erase" : S.tool;
     pushUndo(S.cur); S.painting = true; lastPt = null; drag = { t: "paint" };
@@ -1201,6 +1490,7 @@ stage.addEventListener("pointerdown", e => {
 stage.addEventListener("pointermove", e => {
   const r = stage.getBoundingClientRect();
   cursorPt = !drag && onUI(e) ? null : [e.clientX - r.left, e.clientY - r.top]; updateCursor();  // no brush circle over the toolbar
+  if (L.on && !drag && S.vp && !onUI(e)) lassoMove(toImg(e, r));
   if (!drag) return;
   if (drag.t === "split") { S.split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); render(); }
   else if (drag.t === "paint") strokeTo(toImg(e, r));
@@ -1238,9 +1528,14 @@ addEventListener("keydown", e => {
     z: () => { if (!e.repeat) { S.peekOrig = true; render(); } },
     m: () => { if (!e.repeat) { S.peekMask = true; render(); } },
     // B toggles: enter painting; in painting with the eraser -> back to brush; with the brush -> finish
-    b: () => { if (e.repeat) return; if (!S.brushMode) setBrushMode(true, "brush"); else if (S.tool === "erase") { S.tool = "brush"; syncBrushUI(); updateCursor(); } else setBrushMode(false); },
+    b: () => { if (e.repeat) return; if (!S.brushMode) setBrushMode(true, "brush"); else if (S.tool !== "brush") setBrushMode(true, "brush"); else setBrushMode(false); },
     e: () => setBrushMode(true, "erase"),
-    escape: () => setBrushMode(false),
+    l: () => { if (!e.repeat) setBrushMode(true, "lasso"); },
+    i: () => { if (!e.repeat) invertMask(); },
+    enter: () => { if (L.on) lassoClose(false); },
+    backspace: () => { if (L.on) lassoBack(); },
+    delete: () => { if (L.on) lassoBack(); },
+    escape: () => L.on ? lassoCancel() : setBrushMode(false),
     "[": () => setBrushSize(Math.min(S.brush - 1, S.brush / 1.2), true),
     "]": () => setBrushSize(Math.max(S.brush + 1, S.brush * 1.2), true),
     f: fit, "0": () => zoomAt(1, null, null, true),
