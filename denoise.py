@@ -335,7 +335,8 @@ def run(src, methods, models, device, lam=L0):
             key = m.split("60")[0]
             if key not in cache:
                 cache[key] = sr_at(models[key], src, device)
-            out[m] = to_img(l0_smooth(to_arr(cache[key]), lam, device=device)) if m.endswith("_l0") else cache[key]
+            use_l0 = m.endswith("_l0") and lam > 0  # --l0 0 skips L0, as the web app does
+            out[m] = to_img(l0_smooth(to_arr(cache[key]), lam, device=device)) if use_l0 else cache[key]
     return out
 
 
@@ -359,14 +360,22 @@ def sheet(src, res, path, lam=L0):
     s.save(path)
 
 
+def l0_strength(text):
+    """--l0 value. 0 skips L0; below 0 the L0 loop would never end (beta keeps doubling away from beta_max)."""
+    lam = float(text)
+    if not 0 <= lam < float("inf"):  # also rejects nan and inf
+        raise argparse.ArgumentTypeError(f"must be a finite number, 0 or more (0 skips L0), got {text}")
+    return lam
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("inputs", nargs="+", help="images or folders")
     ap.add_argument("--out", help="output folder (default: <image folder>/<stem>_denoise)")
     ap.add_argument("--all", action="store_true", help="write all 7 candidates and a comparison sheet")
     ap.add_argument("--method", default="esrgan60_l0", choices=METHODS)
-    ap.add_argument("--l0", type=float, default=L0,
-                    help="L0 strength for the *_l0 methods (default 0.001; try 0.0005-0.002)")
+    ap.add_argument("--l0", type=l0_strength, default=L0,
+                    help="L0 strength for the *_l0 methods (default 0.001; try 0.0005-0.002; 0 skips L0)")
     ap.add_argument("--models", default=str(Path.home() / ".cache" / "gpt-anime-denoise"))
     ap.add_argument("--device", default=default_device())
     a = ap.parse_args()
