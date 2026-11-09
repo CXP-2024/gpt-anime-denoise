@@ -619,9 +619,15 @@ function makeThumb(img) {
   c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
   return c.toDataURL("image/png");
 }
+// a pasted image has no name of its own; the paste time keeps a later session's auto-save from overwriting this one
+function pasteStamp(d = new Date()) {
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
 async function addFiles(list, pasted) {
   const files = [...list].filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|jfif|webp|bmp|gif|tiff?|avif|tga)$/i.test(f.name));
   if (!files.length) return toast("没有可用的图片（PNG / JPEG / WebP / BMP / GIF / TIFF / AVIF）", "err");
+  const stamp = pasteStamp();
   let first = null;
   for (const f of files) {
     // the server decodes every format (EXIF rotation, 16-bit, CMYK, TIFF...) and returns a PNG:
@@ -634,7 +640,7 @@ async function addFiles(list, pasted) {
     } catch (e) { if (url) URL.revokeObjectURL(url); toast(`${f.name || "图片"}：${e.message}`, "err", 6000); continue; }
     const w = img.naturalWidth, h = img.naturalHeight;
     const id = nextId++;
-    const name = pasted || !f.name || f.name === "image.png" ? `粘贴的图片-${id}.png` : f.name;
+    const name = pasted || !f.name || f.name === "image.png" ? `粘贴的图片-${stamp}-${id}.png` : f.name;
     const mask = mk(); mask.width = w; mask.height = h;
     { const mc = mask.getContext("2d", { willReadFrequently: true }); mc.fillStyle = "#000"; mc.fillRect(0, 0, w, h); }
     const it = { id, file: blob, hasAlpha, name, stem: name.replace(/\.[^.]+$/, ""), w, h, srcURL: url, srcImg: img, thumb: makeThumb(img),
