@@ -169,8 +169,13 @@ def python312_venv():
 
 
 def drop_other_torch(index):
-    """pip counts torch 2.x+cpu as already satisfying a request for the CUDA build, so remove a mismatched one."""
-    have = capture([str(PYTHON), "-c", "import importlib.metadata as m; print(m.version('torch'))"]).strip()
+    """pip counts torch 2.x+cpu as already satisfying a request for the CUDA build, so remove a mismatched one.
+
+    Ask torch for its version: pip records PyPI's wheels without the build tag (the Windows one, a CPU build, is
+    plain 2.x to pip but 2.x+cpu to torch). pip's record is the fallback when torch does not import.
+    """
+    have = (capture([str(PYTHON), "-c", "import torch; print(torch.__version__)"], timeout=300).strip()
+            or capture([str(PYTHON), "-c", "import importlib.metadata as m; print(m.version('torch'))"]).strip())
     if have and "+" in have and not have.endswith("+" + index):
         print(f"已装的 torch {have} 不是 {index} 版本，先卸载。", flush=True)
         run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
