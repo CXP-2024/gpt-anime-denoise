@@ -109,7 +109,12 @@ def detect():
     if smi or nvidia:
         m = re.search(r"CUDA (?:UMD )?Version:\s*(\d+)\.(\d+)", smi)
         driver = f"{m[1]}.{m[2]}" if m else None
-        note = f"驱动最高支持 CUDA {driver}" if driver else "无法读取驱动支持的 CUDA 版本"
+        if driver:
+            note = f"驱动最高支持 CUDA {driver}"
+        elif not smi:  # an NVIDIA card but no nvidia-smi output: usually the driver is not installed yet
+            note = "没有检测到 NVIDIA 驱动：环境照样装，装好驱动后才能用显卡"
+        else:  # nvidia-smi ran, but its header has a layout this script doesn't know
+            note = "无法读取驱动支持的 CUDA 版本：环境照样装，先装最新的 CUDA 版，装完会检查能不能用上显卡"
         return {"kind": "cuda", "gpu": nvidia or "NVIDIA", "driver_cuda": driver, "names": names, "note": note}
     amd = next((n for n in names if ROCM_GPU.search(n)), None)
     if amd and WINDOWS:
