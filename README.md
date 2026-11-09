@@ -236,6 +236,8 @@ GPT 出的写实图也有这种细碎纹理，画面细节越多、灯光越复�
 - [@juanhanyu](https://github.com/juanhanyu) 在 [PR #2](https://github.com/CXP-2024/gpt-anime-denoise/pull/2) 里加了一键安装依赖（`setup_env.py`，NVIDIA CUDA / AMD ROCm / CPU）和能自动找 Python 的 `去噪工具.bat`，在 [PR #3](https://github.com/CXP-2024/gpt-anime-denoise/pull/3) 里解决了 AMD 显卡上每种新尺寸都要卡约 90 秒的问题，感谢。
 - [@a705876883-arch](https://github.com/a705876883-arch) 在 [PR #4](https://github.com/CXP-2024/gpt-anime-denoise/pull/4) 里给网页工具加了磁性套索和反选，可以只给背景或只给人物去噪，感谢。
 - [@SugarCatCat](https://github.com/SugarCatCat) 在 [PR #5](https://github.com/CXP-2024/gpt-anime-denoise/pull/5) 里加了 Apple Silicon（M 系列 Mac）的 Metal 加速和对应的一键安装，感谢。
+- [@Moemu](https://github.com/Moemu) 在 [PR #6](https://github.com/CXP-2024/gpt-anime-denoise/pull/6) 里让一键安装认得新版 NVIDIA 驱动的 `nvidia-smi`（“CUDA UMD Version”），感谢。
+- [@Plastic-time](https://github.com/Plastic-time) 在 [PR #7](https://github.com/CXP-2024/gpt-anime-denoise/pull/7)–[#11](https://github.com/CXP-2024/gpt-anime-denoise/pull/11) 里修了五个问题：路径带空格或逗号时「在文件夹中显示」打开错文件夹、粘贴的图片重开后被覆盖、`--l0` 为 0 时报错和负数时死循环、已装 CPU 版 torch 时一键安装装不上 CUDA 版、依赖缺 psutil 导致 CPU 上的内存估算不准，感谢。
 
 ## 许可
 
