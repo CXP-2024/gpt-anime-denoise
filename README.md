@@ -55,6 +55,12 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
 
 ![twins bangs zoom](examples/twins_bangs_zoom.webp)
 
+### 细节密集的插画：跑两轮
+
+这张头发、褶边、花纹都很密，鳞纹也特别重，默认方案跑一轮后还能看出残留。所以把第一轮结果再去噪一次，第二轮用更强的参数：预缩 50%，L0 0.002。图形界面里，把第一轮的输出再拖进去，把「预缩比例」调到 50、L0 调到 0.002 就是同样的操作。
+
+![outfit swap before/after](examples/outfit_swap_before_after.webp)
+
 ### 八种方法对比
 
 每张都是原尺寸并排：原图、L0 0.0005、L0 0.001、APISR、CUGAN 缩 60%、CUGAN 缩 60% + L0、ESRGAN 缩 60%、**ESRGAN 缩 60% + L0（默认）**。用 `--all` 可以对自己的图生成同样的对比图，挑最合适的一种。
