@@ -170,7 +170,9 @@ def safe_name(name):
 def reveal(path):
     if os.name == "nt":
         if path.is_file():
-            subprocess.Popen(["explorer", f"/select,{path}"])
+            # Explorer wants /select,"<path>". A list argument quotes the whole switch once the path has a space,
+            # and Explorer then opens Documents instead. Windows paths cannot contain a double quote.
+            subprocess.Popen(f'explorer /select,"{path}"')
         else:
             os.startfile(path.parent if not path.is_dir() else path)
     else:
