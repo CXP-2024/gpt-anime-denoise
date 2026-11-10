@@ -173,20 +173,21 @@ def python312_venv():
         raise SystemExit("Python 3.12 下载失败。")
 
 
-def drop_other_torch(index):
-    """pip counts torch 2.x+cpu as already satisfying a request for the CUDA build, so remove a mismatched one.
+def other_torch(index):
+    """The installed torch's version when it is a build for another index, else None.
 
+    pip counts torch 2.x+cpu as already satisfying a request for the CUDA build, so install() must replace it.
     Ask torch for its version: pip records PyPI's wheels without the build tag (the Windows one, a CPU build, is
     plain 2.x to pip but 2.x+cpu to torch). pip's record is the fallback when torch does not import.
     """
     have = (capture([str(PYTHON), "-c", "import torch; print(torch.__version__)"], timeout=300).strip()
             or capture([str(PYTHON), "-c", "import importlib.metadata as m; print(m.version('torch'))"]).strip())
-    if have and "+" in have and not have.endswith("+" + index):
-        print(f"已装的 torch {have} 不是 {index} 版本，先卸载。", flush=True)
-        run([PYTHON, "-m", "pip", "uninstall", "-y", "torch", "torchvision"])
+    return have if have and "+" in have and not have.endswith("+" + index) else None
 
 
 def install(kind, info):
+    """Installs into .venv; returns the PyTorch index used ("cpu" when every CUDA build failed), or None."""
+    index = None
     if kind == "rocm":
         if not WINDOWS:
             raise SystemExit("这里的 ROCm 安装只针对 Windows。Linux 请按 https://pytorch.org 的 ROCm 安装命令来装。")
@@ -216,15 +217,23 @@ def install(kind, info):
                 if pip("torch", "torchvision"):
                     break
             else:
-                drop_other_torch(index)
+                url = f"{TORCH_INDEX}/{index}"
                 print(f"\n安装 PyTorch（{index}）...", flush=True)
-                if pip("torch", "torchvision", "--index-url", f"{TORCH_INDEX}/{index}"):
+                other = other_torch(index)
+                if other:
+                    # pip removes the old build only after the new wheels are downloaded, so a failed download
+                    # leaves the working torch in place. The plain install below adds what the new build depends on.
+                    print(f"已装的 torch {other} 不是 {index} 版本，下载好新版本后替换。", flush=True)
+                    if not pip("--force-reinstall", "--no-deps", "torch", "torchvision", "--index-url", url):
+                        continue
+                if pip("torch", "torchvision", "--index-url", url):
                     break
         else:
             raise SystemExit("PyTorch 安装失败，见上面的信息。")
     print("\n安装其余依赖 ...", flush=True)
     if not pip("-r", ROOT / "requirements.txt"):
         raise SystemExit("依赖安装失败，见上面的信息。")
+    return index
 
 
 def main():
@@ -247,7 +256,7 @@ def main():
         except EOFError:
             raise SystemExit("没有收到确认。加 --yes 可以不询问直接安装。")
 
-    install(kind, info)
+    index = install(kind, info)
 
     out = capture([str(PYTHON), "-c", CHECK], timeout=300)
     line = next((x for x in out.splitlines() if x.startswith("CHECK")), None)
@@ -257,7 +266,9 @@ def main():
     backend = (f"ROCm {r['hip']}" if r["hip"] else f"CUDA {r['cuda']}" if r["cuda"]
                else "Metal / MPS" if r.get("mps") else "CPU")
     print(f"\n完成：torch {r['torch']} · {backend} · " + (f"显卡 {r['gpu']}" if r["gpu"] else "使用 CPU"))
-    if kind in ("cuda", "rocm") and not r["gpu"]:
+    if kind == "cuda" and index == "cpu":  # no CUDA build could be installed, so the driver is not the cause
+        print("没能装上 CUDA 版 PyTorch，原因见上面 pip 的信息。现在用的是 CPU 版，解决后再运行一次 setup_env.py。")
+    elif kind in ("cuda", "rocm") and not r["gpu"]:
         print(f"环境可以用，但现在只能跑 CPU。请更新显卡驱动（{DRIVER_PAGE[kind]}），重启后再打开。")
     if kind == "mps" and not r.get("mps"):
         print("环境可以用，但没拿到 MPS 设备（是 arm64 的 Python 吗？Rosetta 下的 Python 没有 Metal）。现在跑 CPU。")
