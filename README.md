@@ -77,7 +77,7 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
 python denoise_app.py      # 自动在浏览器打开 http://127.0.0.1:7865/
 ```
 
-Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOISE_PYTHON`、本文件夹的 `.venv`、`py` 启动器和 PATH 里的 Python，用第一个装好了依赖的；都没有就在窗口里运行一键安装（见下面「一键安装依赖」），装完自动打开。图片只在本机处理，不会上传；结果自动存到 `outputs/`（可用环境变量 `ANIME_DENOISE_OUTPUT` 改位置）。
+Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOISE_PYTHON`、本文件夹的 `.venv`、`py` 启动器和 PATH 里的 Python，用第一个装好了依赖的。装有 NVIDIA 驱动时，torch 是 CPU 版的 Python 会被跳过，免得全局 Python 里的 CPU 版 torch 让你一直跑在 CPU 上；`DENOISE_PYTHON` 指定的不受这条限制，确实想用 CPU 版就设它。都没有就在窗口里运行一键安装（见下面「一键安装依赖」），装完自动打开。图片只在本机处理，不会上传；结果自动存到 `outputs/`（可用环境变量 `ANIME_DENOISE_OUTPUT` 改位置）。
 
 ![GUI 总览](examples/gui_compare.webp)
 
