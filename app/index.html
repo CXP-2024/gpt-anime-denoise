@@ -204,9 +204,25 @@
   .brush.erase { border-style: dashed; }
   .size-tip { position: absolute; z-index: 9; transform: translate(-50%, -100%); padding: 3px 8px; border-radius: 6px; font-size: 12px; color: #fff; background: rgba(22, 20, 18, .78); pointer-events: none; white-space: nowrap; }
 
-  .floatbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 14px;
+  /* anchored on the left: the tools' own settings change the bar's width, the tool buttons must not move */
+  .floatbar { position: absolute; top: 12px; left: 12px; z-index: 7; display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 14px;
     background: var(--glass); backdrop-filter: blur(14px); border: 1px solid var(--line); box-shadow: var(--shadow-2); white-space: nowrap;
-    width: max-content; max-width: calc(100% - 24px); flex-wrap: wrap; justify-content: center; }
+    width: max-content; max-width: calc(100% - 24px); flex-wrap: wrap; justify-content: flex-start; }
+  .fb-group { display: contents; }
+  .fb-group[hidden] { display: none !important; }
+  .swatch { position: relative; width: 26px; height: 22px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25), 0 0 0 1px var(--line-2); overflow: hidden; }
+  .swatch input { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); border: 0; padding: 0; opacity: 0; cursor: pointer; }
+  .ib.txt { width: auto; padding: 0 9px; font-size: 12.5px; }
+  #fbPaint .fb-field { gap: 6px; padding: 0 4px; }
+  #fbPaint .fb-field input[type=range] { width: 62px; }
+  #fbPaint .fb-field output { width: 34px; }
+  .brush.pc::after { content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
+  .stage.picking, .stage.picking * { cursor: crosshair !important; }
+  /* eyedropper ring, like PS: top half = colour under the cursor, bottom half = current colour */
+  .loupe { position: absolute; z-index: 9; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%; pointer-events: none;
+    background: linear-gradient(var(--new, #000) 50%, var(--cur, #000) 50%);
+    -webkit-mask: radial-gradient(circle, transparent 23px, #000 24px); mask: radial-gradient(circle, transparent 23px, #000 24px);
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, .7)) drop-shadow(0 0 1px rgba(255, 255, 255, .9)); }
   .floatbar .sep { width: 1px; height: 24px; background: var(--line-2); margin: 0 6px; }
   .floatbar .seg { background: var(--panel-2); }
   .fb-field { display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 12.5px; color: var(--text-2); }
@@ -308,6 +324,7 @@
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.2 7 10 4-1.8 7-5.5 7-10V6z"/></symbol>
   <symbol id="i-brush" viewBox="0 0 24 24"><path d="M14.5 4.5 19.5 9.5 11 18a3 3 0 0 1-2.1.9H5v-3.9A3 3 0 0 1 5.9 13z"/><path d="m13 6 5 5"/></symbol>
   <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4-4 10-10 8 8-6 6z"/><path d="M7 21h13M9 11l6 6"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 19.5c-2.5 0-3.5-1.6-3.5-3.5 0-1.5 1-2.5 2-3.5L18.6 4.4a1.4 1.4 0 0 1 2 2L12.5 14.5c-1 1-2 2-3.5 2"/><path d="M8.5 16c-1.5 0-3.5 1-4.5 3.5 2.5 1 6 1 8-0.5"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
   <symbol id="i-eye-auto" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7c2.1 0 3.9.7 5.4 1.7M22 12s-3.5 7-10 7c-2.1 0-3.9-.7-5.4-1.7"/><circle cx="12" cy="12" r="3"/><path d="M19 3v4h-4M5 21v-4h4"/></symbol>
@@ -383,6 +400,13 @@
         <p class="hint">腮红排线、细纹理、小字被抹掉了？涂上去就按比例混回原图，边缘自动柔化，马上生效。只想去背景：用磁性套索圈住人物；只想去人物：圈完再点反选。</p>
         <div class="protect-sum" id="protectSum" hidden><span class="dot"></span><span id="protectSumText"></span><button class="linkbtn" id="clearMask">清除</button></div>
       </section>
+
+      <section class="sec">
+        <div class="sec-head"><h2><svg class="i"><use href="#i-pen"/></svg>上色修补</h2><span class="pill" id="paintPill">未使用</span></div>
+        <button class="btn wide" id="paintBtn" title="上色笔（P）：直接用颜色补；按住 Alt 或 Ctrl 单击取色"><svg class="i"><use href="#i-pen"/></svg><span id="paintBtnText">上色笔</span><kbd>P</kbd></button>
+        <p class="hint">眼睛高光里的黑点、被抹掉的细线这类小地方，直接用颜色补上。按住 Alt 或 Ctrl 单击取色（对比视图里点左边就取原图的颜色），[ ] 调大小，Shift + [ ] 调软硬，数字键调不透明度。</p>
+        <div class="protect-sum" id="paintSum" hidden><span class="dot" id="paintSumDot"></span><span>已上色，盖在结果最上层</span><button class="linkbtn" id="clearPaint">清除</button></div>
+      </section>
     </div>
     <footer class="panel-foot">
       <div class="foot-row">
@@ -418,17 +442,26 @@
     <div class="stage" id="stage">
       <div class="frame" id="frame" hidden></div>
       <div class="layer" id="Lb"><img id="imgB" alt=""></div>
-      <div class="layer" id="La"><canvas id="cvA"></canvas></div>
+      <div class="layer" id="La"><canvas id="cvA"></canvas><canvas id="cvP"></canvas></div>
       <div class="layer" id="Lm"><canvas id="cvM"></canvas></div>
       <span class="tag l" id="tagL" hidden>原图</span><span class="tag r" id="tagR" hidden>结果</span>
       <div class="divider" id="div" hidden><div class="knob" id="knob" tabindex="0" role="slider" aria-label="对比分割线" aria-valuemin="0" aria-valuemax="100"><svg class="i"><use href="#i-lr"/></svg></div></div>
 
       <div class="floatbar" id="brushbar" hidden>
-        <div class="seg"><button data-t="brush" class="on" title="画笔（B）"><svg class="i"><use href="#i-brush"/></svg>画笔</button><button data-t="erase" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button><button data-t="lasso" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图；按住 Alt 闭合或右键闭合 = 减去"><svg class="i"><use href="#i-lasso"/></svg>套索</button></div>
+        <div class="seg"><button data-t="brush" class="on" title="保护笔刷（B）：涂到的地方混回原图"><svg class="i"><use href="#i-brush"/></svg>保护</button><button data-t="erase" id="eraseBtn" title="橡皮（E，或右键拖动）"><svg class="i"><use href="#i-eraser"/></svg>橡皮</button><button data-t="lasso" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图；按住 Alt 闭合或右键闭合 = 减去"><svg class="i"><use href="#i-lasso"/></svg>套索</button><button data-t="paint" title="上色笔（P）：直接用颜色补；按住 Alt 或 Ctrl 单击取色"><svg class="i"><use href="#i-pen"/></svg>上色</button></div>
         <span class="sep"></span>
+        <span class="fb-group" id="fbProtect">
         <label class="fb-field" id="bSizeField" title="画笔大小，按原图像素（按住空格 + 滚轮，或 [ ]）">大小<input type="range" id="bSize" min="2" max="300" step="1"><output class="num" id="bSizeOut"></output></label>
         <label class="fb-field" title="接下来这几笔混回原图的比例（颜色越深越强）；画过的地方再画会改成新比例；100% 就是完全不动">恢复原图<input type="range" id="bMix" min="0" max="100" step="5"><output class="num" id="bMixOut"></output></label>
         <label class="fb-field" title="边缘渐变宽度；0 是硬边">柔边<input type="range" id="bFeather" min="0" max="150" step="2"><output class="num" id="bFeatherOut"></output></label>
+        </span>
+        <span class="fb-group" id="fbPaint" hidden>
+        <label class="fb-field" title="颜色：点开选色；按住 Alt 或 Ctrl 在画面上单击取色">颜色<span class="swatch" id="pSwatch"><input type="color" id="pColor"></span></label>
+        <label class="fb-field" title="笔刷大小，按原图像素（[ ]，或按住空格 + 滚轮）">大小<input type="range" id="pSize" min="1" max="200" step="1"><output class="num" id="pSizeOut"></output></label>
+        <label class="fb-field" id="pHardField" title="软硬：100% 是硬边，越小边缘越柔（Shift + [ ]）">硬度<input type="range" id="pHard" min="0" max="100" step="5"><output class="num" id="pHardOut"></output></label>
+        <label class="fb-field" title="不透明度：这一笔最多盖住多少（数字键 1–9、0 = 10%–100%）">不透明<input type="range" id="pOpac" min="1" max="100" step="1"><output class="num" id="pOpacOut"></output></label>
+        <button class="ib txt" id="pPixel" title="像素笔：不抗锯齿，按整像素落笔，适合 1–3 px 的点修">像素</button>
+        </span>
         <span class="sep"></span>
         <button class="ib" id="bUndo" title="撤销（Ctrl+Z）"><svg class="i"><use href="#i-undo"/></svg></button>
         <button class="ib" id="bRedo" title="重做（Ctrl+Shift+Z）"><svg class="i"><use href="#i-redo"/></svg></button>
@@ -443,6 +476,7 @@
       <div class="progress" id="prog" hidden><div class="bar"></div><div class="pcard"><span class="spin"></span><span id="progText">去噪中</span><span class="t num" id="progTime"></span></div></div>
       <svg class="lasso-svg" id="lassoSvg" hidden aria-hidden="true"><path class="ant-b" id="lzB"/><path class="ant-w" id="lzW"/><path class="anc" id="lzA"/><circle id="lzStart" r="4.5"/></svg>
       <div class="brush" id="brushCur" hidden></div>
+      <div class="loupe" id="pickLoupe" hidden></div>
       <div class="size-tip num" id="sizeTip" hidden></div>
 
       <div class="empty" id="empty">
@@ -474,30 +508,34 @@
     <div class="formula">
       <div class="fcard"><b>原图</b>永远不会被改动</div><div class="op">＋</div>
       <div class="fcard"><b>去噪</b>按强度重算；松手就重跑，只改 L0 约 0.3 秒</div><div class="op">＋</div>
-      <div class="fcard"><b>局部保护</b>涂到的地方混回原图，马上生效</div><div class="op">＝</div>
+      <div class="fcard"><b>局部保护 · 上色</b>涂到的地方混回原图；上色直接盖在最上层</div><div class="op">＝</div>
       <div class="fcard last"><b>结果</b>看到的就是下载的，也自动存到 outputs</div>
     </div>
     <h4>快捷键</h4>
     <div class="keys">
-      <div><span>添加 / 粘贴图片</span><span><kbd>Ctrl</kbd><kbd>O</kbd> <kbd>Ctrl</kbd><kbd>V</kbd></span></div>
-      <div><span>开始涂抹 / 橡皮</span><span><kbd>B</kbd> <kbd>E</kbd></span></div>
-      <div><span>上一张 / 下一张</span><span><kbd>←</kbd> <kbd>→</kbd></span></div>
-      <div><span>结束涂抹</span><span><kbd>B</kbd> <kbd>Esc</kbd></span></div>
+      <div><span>保护笔刷 / 橡皮</span><span><kbd>B</kbd> <kbd>E</kbd></span></div>
+      <div><span>上色笔</span><span><kbd>P</kbd></span></div>
+      <div><span>磁性套索</span><span><kbd>L</kbd></span></div>
+      <div><span>结束当前工具</span><span>再按一次 · <kbd>Esc</kbd></span></div>
+      <div><span>取色（上色时）</span><span>按住 <kbd>Alt</kbd> / <kbd>Ctrl</kbd> 单击</span></div>
+      <div><span>画笔大小</span><span><kbd>[</kbd> <kbd>]</kbd> · <kbd>空格</kbd>+滚轮</span></div>
+      <div><span>笔刷软硬（上色时）</span><span><kbd>Shift</kbd>+<kbd>[</kbd> <kbd>]</kbd></span></div>
+      <div><span>不透明度（上色时）</span><span><kbd>1</kbd>…<kbd>9</kbd> <kbd>0</kbd>，连按两位如 45%</span></div>
+      <div><span>从上一笔画直线</span><span><kbd>Shift</kbd>+单击</span></div>
+      <div><span>擦除当前这一层</span><span><kbd>E</kbd> · 右键拖动</span></div>
       <div><span>对比 / 原图 / 结果</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span></div>
-      <div><span>画笔大小</span><span><kbd>空格</kbd>+滚轮 <kbd>[</kbd> <kbd>]</kbd></span></div>
-      <div><span>按住暂时看原图</span><span><kbd>Z</kbd></span></div>
-      <div><span>擦除</span><span>右键拖动</span></div>
-      <div><span>适合画面 / 1:1</span><span><kbd>F</kbd> <kbd>0</kbd></span></div>
-      <div><span>拖动画面</span><span>按住 <kbd>空格</kbd></span></div>
-      <div><span>下载 / 重新去噪</span><span><kbd>Ctrl</kbd><kbd>S</kbd> <kbd>Ctrl</kbd><kbd>↵</kbd></span></div>
-      <div><span>撤销 / 重做</span><span><kbd>Ctrl</kbd><kbd>Z</kbd> <kbd>+Shift</kbd></span></div>
-      <div><span>缩放</span><span>滚轮</span></div>
-      <div><span>按住看全部涂抹</span><span><kbd>M</kbd></span></div>
-      <div><span>开始 / 完成磁性套索</span><span><kbd>L</kbd></span></div>
-      <div><span>放弃选框并退出套索</span><span><kbd>Esc</kbd></span></div>
-      <div><span>反选保护区</span><span><kbd>I</kbd></span></div>
-      <div><span>套索闭合 / 删上个锚点</span><span><kbd>↵</kbd> <kbd>⌫</kbd></span></div>
       <div><span>全屏原图 ↔ 结果</span><span><kbd>X</kbd></span></div>
+      <div><span>按住暂时看原图</span><span><kbd>Z</kbd></span></div>
+      <div><span>按住看全部保护区</span><span><kbd>M</kbd></span></div>
+      <div><span>缩放</span><span>滚轮 · <kbd>Ctrl</kbd>+<kbd>+</kbd> <kbd>-</kbd></span></div>
+      <div><span>适合画面 / 100%</span><span><kbd>F</kbd> <kbd>0</kbd> · <kbd>Ctrl</kbd>+<kbd>0</kbd> <kbd>1</kbd></span></div>
+      <div><span>拖动画面</span><span>按住 <kbd>空格</kbd> · 中键</span></div>
+      <div><span>上一张 / 下一张</span><span><kbd>←</kbd> <kbd>→</kbd></span></div>
+      <div><span>反选保护区</span><span><kbd>I</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></span></div>
+      <div><span>套索闭合 / 删上个锚点</span><span><kbd>↵</kbd> <kbd>⌫</kbd></span></div>
+      <div><span>撤销 / 重做</span><span><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></span></div>
+      <div><span>下载 / 重新去噪</span><span><kbd>Ctrl</kbd>+<kbd>S</kbd> · <kbd>Ctrl</kbd>+<kbd>↵</kbd></span></div>
+      <div><span>添加 / 粘贴图片</span><span><kbd>Ctrl</kbd>+<kbd>O</kbd> · <kbd>Ctrl</kbd>+<kbd>V</kbd></span></div>
     </div>
     <div class="dlg-foot">
       <span class="note">方法：缩小到预缩比例 → Real-ESRGAN 动漫超分放回原尺寸 → L0 平滑。<a href="https://github.com/CXP-2024/gpt-anime-denoise" target="_blank" rel="noopener">GitHub</a></span>
@@ -538,9 +576,12 @@ const S = {
   peekOrig: false, peekMask: false, flashAll: false, space: false, spaceMode: "", sizeAt: null,
   brush: BRUSH_DEFAULTS.brush, params: recall("params", { down: 60, l0: 0.001 }),
   mix: BRUSH_DEFAULTS.mix, feather: BRUSH_DEFAULTS.feather, toldBrush: recall("toldBrush", false),
+  // which layer the eraser works on: "mask" after the protect brush / lasso, "paint" after the colour brush (like PS)
+  layer: "mask", pickHeld: false,
+  P: { color: recall("pColor", "#2a2a2e"), size: 6, hard: 80, opac: 100, pixel: false },  // the colour brush
 };
 let nextId = 1;
-const stage = $("#stage"), imgB = $("#imgB"), cvA = $("#cvA"), cvM = $("#cvM");
+const stage = $("#stage"), imgB = $("#imgB"), cvA = $("#cvA"), cvM = $("#cvM"), cvP = $("#cvP");
 const mk = () => document.createElement("canvas");
 const featherC = mk(), tmpC = mk(), dilC = mk(), greyC = mk();
 const strokeC = mk(), strokeFeatherC = mk();  // the stroke being painted now, for its own tint
@@ -844,13 +885,15 @@ function outName(it) {
   const p = it.result.params;
   let tag = same(p, PRESETS.recommended) ? "" : `_s${p.down}_l0-${fmtL0(p.l0)}`;
   if (it.hasMask) tag += "_protected";
+  if (it.hasPaint) tag += "_touchup";
   return `${it.stem}_denoise${tag}.png`;
 }
 function finalBlob(it) {
-  if (!it.hasMask) return Promise.resolve(it.result.blob);
-  let c = cvA;
+  if (!it.hasMask && !it.hasPaint) return Promise.resolve(it.result.blob);
+  let c;
   if (it !== S.cur) { buildFeather(it); c = mk(); blendInto(it, c); if (S.cur) buildFeather(S.cur); }
-  else composite();
+  else { composite(); c = mk(); fit2(c, it.w, it.h); g2(c).drawImage(cvA, 0, 0); }
+  if (it.hasPaint) g2(c).drawImage(it.paint, 0, 0);  // the colour layer sits on top of everything
   return new Promise(res => c.toBlob(res, "image/png"));
 }
 function scheduleSave(it, delay = 700) {
@@ -942,7 +985,16 @@ function syncPanel() {
   $("#dlBtn").disabled = !ready;
   $("#revealBtn").disabled = !(it && it.saved);
   $("#brushBtn").disabled = !it;
-  const inBrush = S.brushMode && S.tool !== "lasso", inLasso = S.brushMode && S.tool === "lasso";  // two separate tools
+  // three separate tools in the side panel: only the one in use lights up
+  const inLasso = S.brushMode && S.tool === "lasso", inPaint = S.brushMode && S.layer === "paint";
+  const inBrush = S.brushMode && !inLasso && !inPaint;
+  $("#paintBtn").disabled = !it;
+  $("#paintBtn").classList.toggle("on", inPaint);
+  $("#paintBtnText").textContent = inPaint ? "完成上色" : "上色笔";
+  const painted = !!(it && it.hasPaint);
+  $("#paintPill").textContent = painted ? "使用中" : "未使用";
+  $("#paintPill").className = "pill" + (painted ? " accent" : "");
+  $("#paintSum").hidden = !painted;
   $("#brushBtn").classList.toggle("on", inBrush);
   $("#brushBtnText").textContent = inBrush ? "完成涂抹" : "保护笔刷";
   $("#brushKbd").textContent = "B";
@@ -962,7 +1014,7 @@ function syncPanel() {
   } else fn.textContent = "结果会自动保存到 outputs 文件夹";
   $("#bUndo").disabled = !(it && it.undo.length);
   $("#bRedo").disabled = !(it && it.redo.length);
-  $("#bClear").disabled = !masked;
+  $("#bClear").disabled = S.layer === "paint" ? !painted : !masked;
   $("#lassoBtn").disabled = !it;
   $("#lassoBtn").classList.toggle("on", inLasso);
   $("#lassoBtnText").textContent = inLasso ? "完成套索" : "磁性套索";
@@ -997,13 +1049,14 @@ function renderStrip() {
 }
 function select(it) {
   if (S.cur === it) return;
-  if (S.brushMode && S.cur) endStroke();
+  if (S.brushMode && S.cur) { endStroke(); endPaint(); }
   lassoFinish();  // keep an open outline on the image being left, like a brush stroke
   S.cur = it;
   imgB.src = it.srcURL;
-  for (const c of [cvA, cvM]) fit2(c, it.w, it.h);
+  for (const c of [cvA, cvM, cvP]) fit2(c, it.w, it.h);
   syncBrushUI();
   composite();
+  drawPaint();
   fit();
   syncPanel(); renderStrip();
 }
@@ -1033,7 +1086,8 @@ function zoomAt(f, cx, cy, abs) {
 function render() {
   const it = S.cur, has = !!(it && S.vp);
   stage.classList.toggle("has", has);
-  stage.classList.toggle("paint", has && S.brushMode && !S.space && S.tool !== "lasso");
+  stage.classList.toggle("paint", has && S.brushMode && !S.space && S.tool !== "lasso" && !picking());
+  stage.classList.toggle("picking", has && !S.space && picking());
   stage.classList.toggle("lasso", has && S.brushMode && !S.space && S.tool === "lasso");
   // Space held: hand to pan; once the wheel is used it becomes "resize" and only the brush circle shows
   stage.classList.toggle("space", has && S.space && S.spaceMode !== "size");
@@ -1048,7 +1102,7 @@ function render() {
   if (!has) { $("#baseSeg").hidden = true; $("#viewHint").textContent = ""; lassoDraw(); return; }
   const { s, x, y } = S.vp, W = stage.clientWidth;
   const tf = `translate(${x}px, ${y}px) scale(${s})`;
-  for (const el of [imgB, cvA, cvM]) { el.style.width = it.w + "px"; el.style.height = it.h + "px"; el.style.transform = tf; el.classList.toggle("px", s >= 2); }
+  for (const el of [imgB, cvA, cvP, cvM]) { el.style.width = it.w + "px"; el.style.height = it.h + "px"; el.style.transform = tf; el.classList.toggle("px", s >= 2); }
   Object.assign($("#frame").style, { left: x + "px", top: y + "px", width: it.w * s + "px", height: it.h * s + "px" });
   const m = S.peekOrig ? "before" : (hasOut ? S.view : "before");
   const leftDen = m === "cmp" && S.base === "den" && it.hasMask;
@@ -1081,14 +1135,19 @@ $$("#baseSeg button").forEach(b => b.onclick = () => { S.base = b.dataset.b; ren
 $("#zFit").onclick = fit; $("#z11").onclick = () => zoomAt(1, null, null, true);
 $("#zIn").onclick = () => zoomAt(1.25); $("#zOut").onclick = () => zoomAt(0.8);
 let sizeTipTimer = 0;
+const curSize = () => S.layer === "paint" ? S.P.size : S.brush;  // each brush keeps its own size, like PS
 function setBrushSize(v, showTip) {
-  S.brush = Math.round(Math.min(300, Math.max(2, v)));
+  if (S.layer === "paint") S.P.size = Math.round(Math.min(200, Math.max(1, v)));
+  else S.brush = Math.round(Math.min(300, Math.max(2, v)));
   syncBrushUI(); updateCursor();
+  showTipAt(`${curSize()} px`, showTip);
+}
+function showTipAt(text, show) {
   const at = S.spaceMode === "size" ? S.sizeAt : cursorPt;
-  if (showTip && at) {
+  if (show && at && S.vp) {
     const tip = $("#sizeTip");
-    tip.textContent = `${S.brush} px`;
-    tip.style.left = at[0] + "px"; tip.style.top = (at[1] - Math.max(10, S.brush * S.vp.s / 2) - 10) + "px";
+    tip.textContent = text;
+    tip.style.left = at[0] + "px"; tip.style.top = (at[1] - Math.max(10, curSize() * S.vp.s / 2) - 10) + "px";
     tip.hidden = false;
     clearTimeout(sizeTipTimer);
     if (S.spaceMode !== "size") sizeTipTimer = setTimeout(() => { tip.hidden = true; }, 700);  // [ ] keys
@@ -1099,9 +1158,9 @@ stage.addEventListener("wheel", e => {
   e.preventDefault();
   const r = stage.getBoundingClientRect();
   if (S.space && S.brushMode) {  // hold Space + wheel: fine brush size control (~6% per notch, at least 1 px)
-    const up = e.deltaY < 0, d = Math.max(1, Math.round(S.brush * 0.06));
+    const up = e.deltaY < 0, d = Math.max(1, Math.round(curSize() * 0.06));
     if (S.spaceMode !== "size") { S.spaceMode = "size"; S.sizeAt = cursorPt || [r.width / 2, r.height / 2]; render(); }
-    setBrushSize(S.brush + (up ? d : -d), true);
+    setBrushSize(curSize() + (up ? d : -d), true);
     return;
   }
   zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top);
@@ -1136,27 +1195,53 @@ function syncBrushUI() {
   $("#bEyeIcon").setAttribute("href", always ? "#i-eye" : "#i-eye-auto");
   $("#bEye").title = always ? "一直显示涂抹范围（点击改成涂完自动隐藏）；按住 M 看全部涂抹" : "涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹";
   $("#brushCur").classList.toggle("erase", S.tool === "erase");
-  const lasso = S.tool === "lasso";
+  const lasso = S.tool === "lasso", paint = S.layer === "paint", P = S.P;
   // the lasso fills an outline, so brush size does not apply: grey it out but keep its place, so the tool buttons don't move
   $("#bSizeField").classList.toggle("off", lasso); $("#bSize").disabled = lasso;
-  $("#bDone").title = lasso ? "完成套索（L）：没闭合的选框会自动闭合并填好；Esc 放弃选框" : "完成涂抹（B 或 Esc）";
+  $("#fbProtect").hidden = paint; $("#fbPaint").hidden = !paint;
+  $("#bInvert").hidden = $("#bEye").hidden = paint;  // these two are about the protected area only
+  $("#pColor").value = P.color; $("#pSwatch").style.background = P.color;
+  $("#pSize").value = P.size; $("#pSizeOut").textContent = P.size;
+  $("#pHard").value = P.hard; $("#pHardOut").textContent = P.hard + "%";
+  $("#pOpac").value = P.opac; $("#pOpacOut").textContent = P.opac + "%";
+  for (const id of ["#pSize", "#pHard", "#pOpac"]) paintRange($(id));
+  $("#pPixel").classList.toggle("on", P.pixel);
+  $("#pHardField").classList.toggle("off", P.pixel); $("#pHard").disabled = P.pixel;  // a pixel pen is always hard
+  $("#eraseBtn").title = paint ? "橡皮（E，或右键拖动）：擦掉上的颜色" : "橡皮（E，或右键拖动）：擦掉保护区";
+  $("#bClear").title = paint ? "清除全部颜色（可撤销）" : "清除全部保护区（可撤销）";
+  $("#bDone").title = lasso ? "完成套索（L）：没闭合的选框会自动闭合并填好；Esc 放弃选框"
+    : paint ? "完成上色（P 或 Esc）" : "完成涂抹（B 或 Esc）";
   $("#brushTip").textContent = lasso
     ? "沿轮廓移动自动吸附 · 单击加锚点 · 回起点单击 / 双击 / 回车闭合 · Alt 或右键闭合 = 减去 · ⌫ 删锚点 · L / 完成 = 闭合并退出 · Esc 放弃"
-    : "涂到的地方混回原图 · 右键拖动擦除 · 按住空格：拖动画面 / 滚轮调笔刷大小 · 按住 M 看全部涂抹";
+    : paint && S.tool === "erase"
+      ? "擦掉上的颜色 · [ ] 大小 · Shift+[ ] 软硬 · 数字键 力度 · Shift+单击画直线 · P 回到上色笔"
+      : paint
+        ? "拖动上色 · 按住 Alt / Ctrl 单击取色 · Shift+单击画直线 · [ ] 大小 · Shift+[ ] 软硬 · 数字键 不透明度 · 右键拖动擦色"
+        : "涂到的地方混回原图 · 右键拖动擦除 · Shift+单击画直线 · 按住空格：拖动画面 / 滚轮调笔刷大小 · 按住 M 看全部涂抹";
   $("#lassoBtn").classList.toggle("on", S.brushMode && lasso);
+}
+// B / L select the protect layer, P the colour layer; E (the eraser) keeps whichever layer was in use
+function chooseTool(tool) {
+  if (tool === "paint") S.layer = "paint";
+  else if (tool === "brush" || tool === "lasso") S.layer = "mask";
+  S.tool = tool;
 }
 function setBrushMode(on, tool) {
   if (on && !S.cur) return;
+  if (!on || (tool && tool !== S.tool)) endPaint();
   S.brushMode = on;
-  if (tool) S.tool = tool;
+  if (tool) chooseTool(tool);
   if (!on || S.tool !== "lasso") lassoFinish();
+  if (!on) S.pickHeld = false;
   $("#brushbar").hidden = !on; $("#brushTip").hidden = !on;
   if (on) { $("#bSaved").textContent = S.cur?.saved ? "已保存" : ""; }
   syncBrushUI(); syncPanel(); render(); updateCursor();
 }
-$("#brushBtn").onclick = () => S.brushMode && S.tool !== "lasso" ? setBrushMode(false) : setBrushMode(true, S.tool === "lasso" ? "brush" : S.tool);
+$("#brushBtn").onclick = () => S.brushMode && S.layer === "mask" && S.tool !== "lasso" ? setBrushMode(false)
+  : setBrushMode(true, S.layer === "mask" && S.tool === "erase" ? "erase" : "brush");
+$("#paintBtn").onclick = () => S.brushMode && S.layer === "paint" ? setBrushMode(false) : setBrushMode(true, "paint");
 $("#bDone").onclick = () => setBrushMode(false);
-$$("#brushbar [data-t]").forEach(b => b.onclick = () => { S.tool = b.dataset.t; if (S.tool !== "lasso") lassoFinish(); syncBrushUI(); syncPanel(); render(); updateCursor(); });
+$$("#brushbar [data-t]").forEach(b => b.onclick = () => setBrushMode(true, b.dataset.t));
 $("#lassoBtn").onclick = () => S.brushMode && S.tool === "lasso" ? setBrushMode(false) : setBrushMode(true, "lasso");
 $("#invertBtn").onclick = $("#bInvert").onclick = () => invertMask();
 $("#bEye").onclick = () => {
@@ -1167,14 +1252,19 @@ $("#bEye").onclick = () => {
 $("#bSize").addEventListener("input", e => { S.brush = +e.target.value; syncBrushUI(); updateCursor(); });
 $("#bMix").addEventListener("input", e => { S.mix = +e.target.value; syncBrushUI(); syncPanel(); updateCursor(); });  // only affects new strokes
 $("#bFeather").addEventListener("input", e => { const it = S.cur; S.feather = +e.target.value; if (it) { it.feather = S.feather; scheduleComposite(); scheduleSave(it); } syncBrushUI(); syncPanel(); });
-function snapshot(it) { return { data: g2(it.mask, true).getImageData(0, 0, it.w, it.h), has: it.hasMask }; }
-function pushUndo(it) { it.undo.push(snapshot(it)); if (it.undo.length > 20) it.undo.shift(); it.redo = []; }
+// one undo history for both layers; each step stores only the layer it changed
+function snapshot(it, layer = "mask") {
+  return layer === "paint" ? { layer, data: g2(paintLayer(it), true).getImageData(0, 0, it.w, it.h), has: !!it.hasPaint }
+    : { layer, data: g2(it.mask, true).getImageData(0, 0, it.w, it.h), has: it.hasMask };
+}
+function pushUndo(it, layer = "mask") { it.undo.push(snapshot(it, layer)); if (it.undo.length > 20) it.undo.shift(); it.redo = []; }
 function restore(it, from, to) {
   const u = from.pop();
   if (!u) return;
-  to.push(snapshot(it));
-  g2(it.mask, true).putImageData(u.data, 0, 0); it.hasMask = u.has;
-  composite(); scheduleSave(it); syncPanel(); renderStrip();
+  to.push(snapshot(it, u.layer));
+  if (u.layer === "paint") { g2(paintLayer(it), true).putImageData(u.data, 0, 0); it.hasPaint = u.has; drawPaint(); }
+  else { g2(it.mask, true).putImageData(u.data, 0, 0); it.hasMask = u.has; composite(); }
+  scheduleSave(it); syncPanel(); renderStrip();
 }
 const undo = () => S.cur && restore(S.cur, S.cur.undo, S.cur.redo);
 const redo = () => S.cur && restore(S.cur, S.cur.redo, S.cur.undo);
@@ -1186,7 +1276,9 @@ function clearMask() {
   composite(); scheduleSave(it); syncPanel(); renderStrip();
   toast("已清除保护区（Ctrl+Z 可撤销）");
 }
-$("#bClear").onclick = $("#clearMask").onclick = clearMask;
+$("#bClear").onclick = () => S.layer === "paint" ? clearPaint() : clearMask();
+$("#clearMask").onclick = clearMask;
+$("#clearPaint").onclick = () => clearPaint();
 function hasPixels(it) {
   const d = g2(it.mask, true).getImageData(0, 0, it.w, it.h).data;
   for (let i = 0; i < d.length; i += 4) if (d[i]) return true;  // any non-black grey
@@ -1212,8 +1304,9 @@ function strokeTo(pt) {
 }
 function endStroke() {
   if (!S.painting) return;
-  S.painting = false; lastPt = null;
   const it = S.cur;
+  it.lastMaskPt = lastPt;  // for Shift+click: a straight line from here
+  S.painting = false; lastPt = null;
   it.hasMask = hasPixels(it);
   if (S.eyeMode === "auto" && strokeTool === "brush") {  // keep this stroke's tint a moment after lifting, then fade
     S.flash = true; clearTimeout(flashTimer);
@@ -1475,6 +1568,164 @@ function lassoDraw() {
   st.classList.toggle("near", L.near);
 }
 
+/* ---------------- colour layer: paint brush + eyedropper ---------------- */
+// A transparent layer on top of the result (protection included). It never changes the original or the protected
+// area, it survives re-denoising, and it is part of the downloaded / auto-saved PNG.
+// Strokes work like PS: dabs build up inside one stroke, and the stroke's opacity caps how much it covers.
+const strokeP = mk(), stampC = mk();
+let pStroke = null, stampKey = "", paintRaf = 0;
+function paintLayer(it) {
+  if (!it.paint) { it.paint = mk(); it.paint.width = it.w; it.paint.height = it.h; }
+  return it.paint;
+}
+function drawPaint() {
+  const it = S.cur;
+  if (!it) return;
+  fit2(cvP, it.w, it.h);
+  const c = g2(cvP);
+  c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.clearRect(0, 0, it.w, it.h);
+  if (it.paint) c.drawImage(it.paint, 0, 0);
+  if (pStroke) {
+    c.globalAlpha = S.P.opac / 100;
+    c.globalCompositeOperation = pStroke.erase ? "destination-out" : "source-over";
+    c.drawImage(strokeP, 0, 0);
+    c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+  }
+}
+const schedulePaint = () => { if (!paintRaf) paintRaf = requestAnimationFrame(() => { paintRaf = 0; drawPaint(); }); };
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+function stamp(erase) {
+  const P = S.P, col = erase ? "#000000" : P.color, key = `${P.size}|${P.hard}|${P.pixel}|${col}`;
+  if (key === stampKey) return stampC;
+  stampKey = key;
+  const c = g2(stampC);
+  if (P.pixel) {  // whole pixels, no anti-aliasing: a 1 px pen is exactly one pixel, 2 px a 2x2 block
+    const s = Math.max(1, Math.round(P.size)), r2 = (s / 2) ** 2 + 0.25;
+    stampC.width = stampC.height = s;
+    c.clearRect(0, 0, s, s); c.fillStyle = col;
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) if ((x + 0.5 - s / 2) ** 2 + (y + 0.5 - s / 2) ** 2 <= r2) c.fillRect(x, y, 1, 1);
+    return stampC;
+  }
+  const r = P.size / 2, n = Math.ceil(P.size) + 2, m = n / 2;
+  stampC.width = stampC.height = n;
+  c.clearRect(0, 0, n, n);
+  if (P.hard >= 100) { c.fillStyle = col; c.beginPath(); c.arc(m, m, r, 0, Math.PI * 2); c.fill(); return stampC; }
+  const [R, G, B] = hexRGB(col), g = c.createRadialGradient(m, m, r * P.hard / 100, m, m, r);
+  g.addColorStop(0, `rgba(${R},${G},${B},1)`); g.addColorStop(1, `rgba(${R},${G},${B},0)`);  // fade to the same colour, no grey fringe
+  c.fillStyle = g; c.fillRect(0, 0, n, n);
+  return stampC;
+}
+function dab(x, y) {
+  const st = stamp(pStroke.erase), c = g2(strokeP);
+  if (S.P.pixel) { const s = st.width; c.drawImage(st, Math.floor(x) - Math.floor((s - 1) / 2), Math.floor(y) - Math.floor((s - 1) / 2)); }
+  else c.drawImage(st, x - st.width / 2, y - st.height / 2);
+}
+function paintTo(pt) {  // dabs along the segment, evenly spaced across segments
+  const a = pStroke.last, dx = pt[0] - a[0], dy = pt[1] - a[1], dist = Math.hypot(dx, dy);
+  if (!dist) return;
+  const step = S.P.pixel ? 1 : Math.max(0.5, S.P.size * 0.1);
+  let s = step - pStroke.carry;
+  for (; s <= dist; s += step) dab(a[0] + dx * s / dist, a[1] + dy * s / dist);
+  pStroke.carry = dist - (s - step);
+  pStroke.last = pt;
+  schedulePaint();
+}
+function beginPaint(pt, erase, line) {
+  const it = S.cur;
+  paintLayer(it);
+  pushUndo(it, "paint");
+  fit2(strokeP, it.w, it.h); g2(strokeP).clearRect(0, 0, it.w, it.h);
+  const from = line && it.lastPaintPt;
+  pStroke = { erase, carry: 0, last: from || pt };
+  if (from) { dab(...from); paintTo(pt); } else { dab(...pt); schedulePaint(); }
+}
+function endPaint() {
+  const it = S.cur;
+  if (!pStroke || !it) return;
+  const c = g2(it.paint, true);
+  c.globalAlpha = S.P.opac / 100;
+  c.globalCompositeOperation = pStroke.erase ? "destination-out" : "source-over";
+  c.drawImage(strokeP, 0, 0);
+  c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+  it.lastPaintPt = pStroke.last;
+  const erased = pStroke.erase;
+  pStroke = null;
+  it.hasPaint = erased ? paintHasPixels(it) : true;
+  drawPaint(); scheduleSave(it); syncPanel(); renderStrip();
+}
+function paintHasPixels(it) {
+  if (!it.paint) return false;
+  const d = g2(it.paint, true).getImageData(0, 0, it.w, it.h).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+  return false;
+}
+function clearPaint() {
+  const it = S.cur;
+  if (!it || !it.hasPaint) return;
+  pushUndo(it, "paint");
+  g2(it.paint, true).clearRect(0, 0, it.w, it.h); it.hasPaint = false;
+  drawPaint(); scheduleSave(it); syncPanel(); renderStrip();
+  toast("已清除上的颜色（Ctrl+Z 可撤销）");
+}
+// eyedropper: hold Alt (PS, SAI, CSP) or Ctrl (Krita) with the colour brush
+function picking() { return S.brushMode && S.tool === "paint" && S.pickHeld; }
+function readerOf(it, kind) {  // a readable copy of the original or of the unprotected result
+  const key = kind === "orig" ? it.srcURL : it.result.url;
+  it.readers ??= {};
+  if (it.readers[kind]?.key !== key) {
+    const c = mk(); c.width = it.w; c.height = it.h;
+    const g = g2(c, true); g.drawImage(kind === "orig" ? it.srcImg : it.result.img, 0, 0);
+    it.readers[kind] = { key, g };
+  }
+  return it.readers[kind].g;
+}
+function sampleAt(pt, screenX) {
+  // the colour shown under the cursor: in the comparison view the left side gives the original, the right the result
+  const it = S.cur, x = Math.floor(pt[0]), y = Math.floor(pt[1]);
+  if (!it || x < 0 || y < 0 || x >= it.w || y >= it.h) return null;
+  const m = S.peekOrig ? "before" : (it.result ? S.view : "before");
+  const left = m === "before" || (m === "cmp" && screenX < S.split * stage.clientWidth);
+  let px;
+  if (left) px = readerOf(it, m === "cmp" && S.base === "den" && it.hasMask ? "den" : "orig").getImageData(x, y, 1, 1).data;
+  else {
+    px = [...g2(cvA, true).getImageData(x, y, 1, 1).data];
+    if (it.paint && it.hasPaint) {
+      const q = g2(it.paint, true).getImageData(x, y, 1, 1).data, a = q[3] / 255;
+      for (let k = 0; k < 3; k++) px[k] = q[k] * a + px[k] * (1 - a);
+    }
+  }
+  return "#" + [0, 1, 2].map(k => Math.round(px[k]).toString(16).padStart(2, "0")).join("");
+}
+function setPaintColor(col) {
+  if (!col) return;
+  S.P.color = col; store("pColor", col); stampKey = "";
+  syncBrushUI(); updateCursor();
+}
+function showLoupe(at, col) {
+  const l = $("#pickLoupe");
+  if (!at || !col) { l.hidden = true; return; }
+  l.hidden = false;
+  l.style.left = at[0] + "px"; l.style.top = at[1] + "px";
+  l.style.setProperty("--new", col); l.style.setProperty("--cur", S.P.color);
+}
+$("#pColor").addEventListener("input", e => setPaintColor(e.target.value));
+$("#pSize").addEventListener("input", e => { S.P.size = +e.target.value; syncBrushUI(); updateCursor(); });
+$("#pHard").addEventListener("input", e => { S.P.hard = +e.target.value; syncBrushUI(); });
+$("#pOpac").addEventListener("input", e => { S.P.opac = +e.target.value; syncBrushUI(); });
+$("#pPixel").onclick = () => { S.P.pixel = !S.P.pixel; syncBrushUI(); updateCursor(); };
+function setHardness(v) {
+  S.P.hard = Math.min(100, Math.max(0, v)); syncBrushUI();
+  showTipAt(`硬度 ${S.P.hard}%`, true);
+}
+let digitAt = 0, digitPrev = "";
+function opacityKey(d) {  // PS: 1-9 = 10-90%, 0 = 100%; two digits typed quickly = that exact percent (4 5 -> 45%)
+  const now = performance.now(), quick = now - digitAt < 600 && digitPrev !== "";
+  const v = quick ? Math.max(1, +(digitPrev + d)) : d === "0" ? 100 : +d * 10;
+  digitPrev = quick ? "" : d; digitAt = now;
+  S.P.opac = v; syncBrushUI();
+  showTipAt(`${S.tool === "erase" ? "力度" : "不透明度"} ${v}%`, true);
+}
+
 /* ---------------- pointer ---------------- */
 let drag = null, cursorPt = null;
 const onUI = e => !!(e.target && e.target.closest && e.target.closest(".floatbar"));  // toolbar inside the stage
@@ -1482,11 +1733,19 @@ const toImg = (e, r) => [(e.clientX - r.left - S.vp.x) / S.vp.s, (e.clientY - r.
 function updateCursor() {
   const b = $("#brushCur");
   const pt = S.spaceMode === "size" ? S.sizeAt : cursorPt;
-  if (!S.brushMode || S.tool === "lasso" || !S.vp || !pt || (drag && drag.t === "pan") || (S.space && S.spaceMode !== "size")) { b.hidden = true; return; }
-  const d = S.brush * S.vp.s;
+  const pick = picking();
+  stage.classList.toggle("picking", !!(S.cur && S.vp && !S.space && pick));
+  stage.classList.toggle("paint", !!(S.cur && S.vp && S.brushMode && !S.space && S.tool !== "lasso" && !pick));
+  if (!pick || !pt || !S.vp) showLoupe(null);
+  else showLoupe(pt, sampleAt([(pt[0] - S.vp.x) / S.vp.s, (pt[1] - S.vp.y) / S.vp.s], pt[0]));
+  if (!S.brushMode || S.tool === "lasso" || pick || !S.vp || !pt || (drag && drag.t === "pan") || (S.space && S.spaceMode !== "size")) { b.hidden = true; return; }
+  const paint = S.layer === "paint";
+  const d = Math.max(paint ? 4 : 0, curSize() * S.vp.s);
   b.hidden = false; b.style.width = b.style.height = d + "px";
   b.style.left = pt[0] + "px"; b.style.top = pt[1] + "px";
-  b.style.background = S.tool === "erase" ? "none" : `rgba(${maskRGB()}, ${(0.32 * S.mix / 100).toFixed(3)})`;
+  b.classList.toggle("pc", paint);  // a centre dot: small colour brushes stay easy to aim
+  b.style.borderRadius = paint && S.P.pixel ? "2px" : "";
+  b.style.background = S.tool === "erase" || paint ? "none" : `rgba(${maskRGB()}, ${(0.32 * S.mix / 100).toFixed(3)})`;
 }
 stage.addEventListener("contextmenu", e => e.preventDefault());
 stage.addEventListener("pointerdown", e => {
@@ -1498,9 +1757,15 @@ stage.addEventListener("pointerdown", e => {
   if (e.button === 1 || S.space) { drag = { t: "pan", x: e.clientX, y: e.clientY }; if (S.space) { S.spaceMode = "pan"; $("#sizeTip").hidden = true; } }
   else if (e.button === 0 && (onKnob || (onLine && !S.brushMode))) drag = { t: "split" };
   else if (S.brushMode && S.tool === "lasso" && (e.button === 0 || e.button === 2)) lassoDown(toImg(e, r), e);
+  else if (S.brushMode && S.layer === "paint" && (e.button === 0 || e.button === 2)) {
+    S.pickHeld = e.altKey || e.ctrlKey;
+    if (picking() && e.button === 0) { drag = { t: "pick" }; setPaintColor(sampleAt(toImg(e, r), px)); }
+    else { drag = { t: "pstroke" }; beginPaint(toImg(e, r), e.button === 2 || S.tool === "erase", e.shiftKey); }
+  }
   else if (S.brushMode && (e.button === 0 || e.button === 2)) {
     strokeTool = e.button === 2 ? "erase" : S.tool;
-    pushUndo(S.cur); S.painting = true; lastPt = null; drag = { t: "paint" };
+    pushUndo(S.cur); S.painting = true; drag = { t: "paint" };
+    lastPt = e.shiftKey && S.cur.lastMaskPt ? S.cur.lastMaskPt : null;  // Shift+click: straight line from the last stroke
     fit2(strokeC, S.cur.w, S.cur.h); { const sc = g2(strokeC); sc.fillStyle = "#000"; sc.fillRect(0, 0, S.cur.w, S.cur.h); }
     clearTimeout(flashTimer); S.flash = false;
     strokeTo(toImg(e, r)); render();
@@ -1510,15 +1775,19 @@ stage.addEventListener("pointerdown", e => {
 });
 stage.addEventListener("pointermove", e => {
   const r = stage.getBoundingClientRect();
+  if (S.brushMode && S.tool === "paint" && !drag) S.pickHeld = e.altKey || e.ctrlKey;  // keys pressed outside the window
   cursorPt = !drag && onUI(e) ? null : [e.clientX - r.left, e.clientY - r.top]; updateCursor();  // no brush circle over the toolbar
   if (L.on && !drag && S.vp && !onUI(e)) lassoMove(toImg(e, r));
   if (!drag) return;
   if (drag.t === "split") { S.split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); render(); }
   else if (drag.t === "paint") strokeTo(toImg(e, r));
+  else if (drag.t === "pstroke") paintTo(toImg(e, r));
+  else if (drag.t === "pick") setPaintColor(sampleAt(toImg(e, r), e.clientX - r.left));
   else { S.vp.x += e.clientX - drag.x; S.vp.y += e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; render(); }
 });
 function pointerEnd() {
   if (drag && drag.t === "paint") endStroke();
+  if (drag && drag.t === "pstroke") endPaint();
   drag = null; stage.classList.remove("panning"); render(); updateCursor();
 }
 stage.addEventListener("pointerup", pointerEnd);
@@ -1526,20 +1795,50 @@ stage.addEventListener("pointercancel", pointerEnd);
 stage.addEventListener("pointerleave", () => { cursorPt = null; updateCursor(); });
 
 /* ---------------- keyboard ---------------- */
+// With a Chinese IME on, letter keys arrive as "Process" and [ ] as 【 】: read the physical key instead
+function keyOf(e) {
+  if (e.key && e.key !== "Process" && e.key !== "Unidentified") return ({ "【": "[", "】": "]", "{": "[", "}": "]" })[e.key] || e.key.toLowerCase();
+  const c = e.code || "";
+  return /^Key[A-Z]$/.test(c) ? c.slice(3).toLowerCase() : /^(Digit|Numpad)\d$/.test(c) ? c.slice(-1)
+    : ({ BracketLeft: "[", BracketRight: "]", Space: " ", Escape: "escape", Enter: "enter", Backspace: "backspace" })[c] || "";
+}
 addEventListener("keydown", e => {
   if ($("#helpDlg").open || $("#quitDlg").open) return;
-  const k = e.key.toLowerCase(), el = e.target;
-  const typing = (el.tagName === "INPUT" && el.type !== "range") || el.tagName === "TEXTAREA";
+  const k = keyOf(e), el = e.target;
+  const typing = (el.tagName === "INPUT" && el.type !== "range" && el.type !== "color") || el.tagName === "TEXTAREA";
+  if (e.key === "Alt" || e.key === "Control") {  // held with the colour brush: eyedropper
+    if (S.brushMode && S.tool === "paint") {
+      if (e.key === "Alt") e.preventDefault();  // otherwise Windows moves focus to the browser menu on release
+      if (!S.pickHeld) { S.pickHeld = true; updateCursor(); }
+    }
+    return;
+  }
   if (e.ctrlKey || e.metaKey) {
     if (k === "o") { e.preventDefault(); pick(); }
     else if (k === "s") { e.preventDefault(); download(); }
     else if (k === "enter") { e.preventDefault(); if (S.cur) enqueue(S.cur, true); }
     else if (k === "z" && !typing) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if (k === "y" && !typing) { e.preventDefault(); redo(); }
+    else if (k === "i" && e.shiftKey && !typing) { e.preventDefault(); invertMask(); }  // PS: inverse selection
+    else if (k === "0") { e.preventDefault(); fit(); }  // PS: fit on screen
+    else if (k === "1") { e.preventDefault(); zoomAt(1, null, null, true); }  // PS: 100%
+    else if (k === "=" || k === "+" || e.code === "NumpadAdd") { e.preventDefault(); zoomAt(1.25); }  // instead of the browser's page zoom
+    else if (k === "-" || e.code === "NumpadSubtract") { e.preventDefault(); zoomAt(0.8); }
     return;
   }
   if (typing || e.altKey) return;
-  if (e.key === " ") { e.preventDefault(); if (!S.space) { S.space = true; S.spaceMode = "idle"; render(); updateCursor(); } return; }
+  if ((k === "[" || k === "]") && S.cur) {  // [ ] size; Shift+[ ] hardness (PS)
+    e.preventDefault();
+    const up = k === "]";
+    if (e.shiftKey) { if (S.layer === "paint" && !S.P.pixel) setHardness(S.P.hard + (up ? 25 : -25)); }
+    else { const v = curSize(); setBrushSize(up ? Math.max(v + 1, v * 1.2) : Math.min(v - 1, v / 1.2), true); }
+    return;
+  }
+  if (/^\d$/.test(k) && S.cur && S.brushMode && S.layer === "paint") {  // PS: number keys = opacity
+    e.preventDefault(); opacityKey(k);
+    return;
+  }
+  if (k === " ") { e.preventDefault(); if (!S.space) { S.space = true; S.spaceMode = "idle"; render(); updateCursor(); } return; }
   if (e.key === "?") { $("#helpDlg").showModal(); return; }
   if (!S.cur) return;
   const onRange = el.tagName === "INPUT";
@@ -1550,7 +1849,9 @@ addEventListener("keydown", e => {
     m: () => { if (!e.repeat) { S.peekMask = true; render(); } },
     // B toggles: enter painting; in painting with the eraser -> back to brush; with the brush -> finish
     b: () => { if (e.repeat) return; if (!S.brushMode) setBrushMode(true, "brush"); else if (S.tool !== "brush") setBrushMode(true, "brush"); else setBrushMode(false); },
-    e: () => setBrushMode(true, "erase"),
+    e: () => setBrushMode(true, "erase"),  // erases the layer in use: the protected area, or the colour after P
+    // P toggles the colour brush the same way
+    p: () => { if (e.repeat) return; if (!S.brushMode || S.tool !== "paint") setBrushMode(true, "paint"); else setBrushMode(false); },
     // L toggles the lasso (an open outline is closed and kept); Esc leaves the brush or the lasso (an open outline is dropped)
     l: () => { if (!e.repeat) S.brushMode && S.tool === "lasso" ? setBrushMode(false) : setBrushMode(true, "lasso"); },
     i: () => { if (!e.repeat) invertMask(); },
@@ -1560,20 +1861,22 @@ addEventListener("keydown", e => {
       delete: lassoBack,
     }),
     escape: () => { lassoCancel(); setBrushMode(false); },
-    "[": () => setBrushSize(Math.min(S.brush - 1, S.brush / 1.2), true),
-    "]": () => setBrushSize(Math.max(S.brush + 1, S.brush * 1.2), true),
     f: fit, "0": () => zoomAt(1, null, null, true),
     arrowleft: () => !onRange && step(-1), arrowright: () => !onRange && step(1),
   }[k];
   if (act) { if (!(onRange && k.startsWith("arrow"))) e.preventDefault(); act(); }
 });
 addEventListener("keyup", e => {
-  const k = e.key.toLowerCase();
-  if (e.key === " ") { S.space = false; S.spaceMode = ""; $("#sizeTip").hidden = true; render(); updateCursor(); }
+  const k = keyOf(e);
+  if ((e.key === "Alt" || e.key === "Control") && S.pickHeld) {
+    if (e.key === "Alt") e.preventDefault();
+    S.pickHeld = false; updateCursor();
+  }
+  if (k === " ") { S.space = false; S.spaceMode = ""; $("#sizeTip").hidden = true; render(); updateCursor(); }
   if (k === "z" && S.peekOrig) { S.peekOrig = false; render(); }
   if (k === "m" && S.peekMask) { S.peekMask = false; render(); }
 });
-addEventListener("blur", () => { S.space = S.peekOrig = S.peekMask = false; S.spaceMode = ""; $("#sizeTip").hidden = true; render(); updateCursor(); });
+addEventListener("blur", () => { S.space = S.peekOrig = S.peekMask = S.pickHeld = false; S.spaceMode = ""; $("#sizeTip").hidden = true; render(); updateCursor(); });
 
 syncBrushUI(); syncPanel(); renderStrip(); render();
 </script>
