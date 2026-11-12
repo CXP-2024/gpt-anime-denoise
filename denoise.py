@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import io
 import os
+import sys
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -73,10 +74,24 @@ def load_model(key, folder, device):
     return spandrel.ModelLoader().load_from_file(str(fetch(key, folder))).model.to(device).eval()
 
 
+GPU_NOTE = ""  # set by default_device() when a visible GPU can't run this torch build
+
+
 def default_device():
-    """CUDA, else Apple Metal (MPS), else the CPU; --device still overrides."""
+    """CUDA, else Apple Metal (MPS), else the CPU; --device still overrides.
+
+    is_available() is also true when this torch build has no kernels for the card (a cu130 build on a GTX 10xx), so
+    one tiny kernel is run first; when it fails, GPU_NOTE explains and the CPU is used instead of crashing later.
+    """
+    global GPU_NOTE
     if torch.cuda.is_available():
-        return "cuda"
+        try:
+            (torch.ones(1, device="cuda") + 1).item()
+            return "cuda"
+        except Exception:
+            GPU_NOTE = (f"已安装的 PyTorch 不支持这张显卡（{torch.cuda.get_device_name(0)}），先用 CPU 运行；"
+                        "重新运行 setup_env.py 可以换成支持它的版本。")
+            print(GPU_NOTE, file=sys.stderr, flush=True)
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return "mps"
     return "cpu"

@@ -557,6 +557,10 @@ fetch("/api/info").then(r => r.json()).then(j => {
   S.info = j;
   $("#devName").textContent = "本机处理 · " + (j.device === "CPU" ? "CPU" : shortDev(j.device));
   $("#devChip").hidden = false;
+  if (j.gpu_note) {  // a GPU is there but this torch build can't run on it: say so instead of a raw CUDA error
+    $("#devChip").title = j.gpu_note;
+    toast(j.gpu_note, "err", 12000);
+  }
   syncPanel();
 }).catch(() => {});
 

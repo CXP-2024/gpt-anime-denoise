@@ -68,7 +68,7 @@ OUTPUT = Path(os.environ.get("ANIME_DENOISE_OUTPUT", HERE / "outputs"))
 MODELS_DIR = Path.home() / ".cache" / "gpt-anime-denoise"
 DEVICE = dn.default_device()
 DEVICE_NAME = (dn.torch.cuda.get_device_name(0) if DEVICE == "cuda"
-               else "Apple GPU (MPS)" if DEVICE == "mps" else "CPU")
+               else "Apple GPU (MPS)" if DEVICE == "mps" else "CPU")  # ASCII: it also goes into a response header
 MAX_BYTES = 80 * 1024 * 1024
 MAX_PIXELS = 16_777_216  # 4096 x 4096
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS * 2
@@ -212,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, ICON.read_bytes(), "image/x-icon")
         elif path == "/api/info":
             self._json({"app": "anime-denoise", "version": VERSION, "pid": os.getpid(), "busy": progress["busy"],
-                        "device": DEVICE_NAME, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT)})
+                        "device": DEVICE_NAME, "gpu_note": dn.GPU_NOTE, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT)})
         elif path == "/api/progress":
             p = dict(progress)
             p["elapsed"] = round(time.time() - p["started"], 1) if p["busy"] else 0

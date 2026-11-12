@@ -41,8 +41,9 @@ exit /b 0
 
 :try
 rem Records the interpreter's real path only when all the imports succeed and, when DENOISE_NEED_GPU
-rem is set, torch is a CUDA or ROCm build.
-for /f "usebackq delims=" %%P in (`call %* -c "import os, sys, torch, spandrel, numpy, PIL; sys.exit(1) if os.environ.get('DENOISE_NEED_GPU') and not (torch.version.cuda or getattr(torch.version, 'hip', None)) else print(sys.executable)" 2^>nul`) do set "PYEXE=%%P"
+rem is set, torch is a CUDA or ROCm build that can run a kernel on the card (a cu130 build has none for
+rem a GTX 10xx, so that Python is skipped and setup_env.py picks an older CUDA build).
+for /f "usebackq delims=" %%P in (`call %* -c "import os, sys, torch, spandrel, numpy, PIL; g = os.environ.get('DENOISE_NEED_GPU'); sys.exit(1) if g and not (torch.version.cuda or getattr(torch.version, 'hip', None)) else None; g and torch.cuda.is_available() and (torch.ones(1, device='cuda') + 1).item(); print(sys.executable)" 2^>nul`) do set "PYEXE=%%P"
 exit /b 0
 
 :tryany

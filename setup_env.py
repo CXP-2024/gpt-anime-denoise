@@ -49,14 +49,36 @@ SIZE = {"cuda": "约 2–3 GB", "rocm": "约 2.2 GB（另下约 20 MB 的 Python
         "mps": "约 300 MB", "cpu": "约 200 MB"}
 NAME = {"cuda": "NVIDIA CUDA", "rocm": "AMD ROCm 7.2.1", "mps": "Apple Metal (MPS)", "cpu": "CPU"}
 
+# is_available() is true even when this torch build has no kernels for the card (e.g. a cu130 build on a GTX 10xx),
+# so the probe also runs one tiny kernel on it.
+GPU_PROBE = r"""
+import json, torch
+ok = torch.cuda.is_available()
+cap = kernel = None
+if ok:
+    cap = "%d.%d" % torch.cuda.get_device_capability(0)
+    try:
+        kernel = (torch.ones(1, device="cuda") + 1).item() == 2
+    except Exception:
+        kernel = False
+print("GPU" + json.dumps({"cap": cap, "kernel": kernel}))
+"""
 CHECK = r"""
 import json, torch, spandrel, numpy, PIL
 ok = torch.cuda.is_available()
 mps = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+cap = kernel = None
+if ok:
+    cap = "%d.%d" % torch.cuda.get_device_capability(0)
+    try:
+        kernel = (torch.ones(1, device="cuda") + 1).item() == 2
+    except Exception:
+        kernel = False
 print("CHECK" + json.dumps({"torch": torch.__version__, "hip": getattr(torch.version, "hip", None),
-                            "cuda": torch.version.cuda, "mps": mps,
+                            "cuda": torch.version.cuda, "mps": mps, "cap": cap, "kernel": kernel,
                             "gpu": torch.cuda.get_device_name(0) if ok else None}))
 """
+CUDA13_MIN_CAP = (7, 5)  # PyTorch's CUDA 13 builds start at sm_75 (RTX 20 series); older cards need a CUDA 12 build
 
 
 def capture(cmd, timeout=60):
@@ -115,7 +137,11 @@ def detect():
             note = "没有检测到 NVIDIA 驱动：环境照样装，装好驱动后才能用显卡"
         else:  # nvidia-smi ran, but its header has a layout this script doesn't know
             note = "无法读取驱动支持的 CUDA 版本：环境照样装，先装最新的 CUDA 版，装完会检查能不能用上显卡"
-        return {"kind": "cuda", "gpu": nvidia or "NVIDIA", "driver_cuda": driver, "names": names, "note": note}
+        q = capture(["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"]) if smi else ""
+        c = re.match(r"\s*(\d+)\.(\d+)\s*$", q.splitlines()[0] if q.strip() else "")
+        cap = f"{c[1]}.{c[2]}" if c else None  # older drivers don't know this query: then only the kernel test decides
+        return {"kind": "cuda", "gpu": nvidia or "NVIDIA", "driver_cuda": driver, "cap": cap, "names": names,
+                "note": note}
     amd = next((n for n in names if ROCM_GPU.search(n)), None)
     if amd and WINDOWS:
         return {"kind": "rocm", "gpu": amd, "names": names, "note": "需要较新的 AMD 驱动（AMD 为 ROCm 7.2.1 指定 26.2.2）"}
@@ -185,6 +211,13 @@ def other_torch(index):
     return have if have and "+" in have and not have.endswith("+" + index) else None
 
 
+def gpu_probe():
+    """{"cap": "6.1", "kernel": True/False} from .venv's torch; kernel is None when no GPU is visible at all."""
+    out = capture([str(PYTHON), "-c", GPU_PROBE], timeout=300)
+    line = next((x for x in out.splitlines() if x.startswith("GPU")), None)
+    return json.loads(line[3:]) if line else {}
+
+
 def install(kind, info):
     """Installs into .venv; returns the PyTorch index used ("cpu" when every CUDA build failed), or None."""
     index = None
@@ -205,7 +238,15 @@ def install(kind, info):
                 raise SystemExit("创建虚拟环境失败。")
         tag = "cp" + (venv_version() or "").replace(".", "")
         if kind == "cuda":
-            indexes = cuda_builds(tag, info.get("driver_cuda")) + ["cpu"]
+            builds = cuda_builds(tag, info.get("driver_cuda"))
+            cap = info.get("cap")
+            if cap and tuple(map(int, cap.split("."))) < CUDA13_MIN_CAP:
+                older = [b for b in builds if int(b[2:]) < 130]
+                if older:
+                    print(f"显卡计算能力 {cap}：CUDA 13 版的 PyTorch 已不支持这么老的显卡，只试 CUDA 12 及更早的版本。",
+                          flush=True)
+                    builds = older
+            indexes = builds + ["cpu"]
             print("可用的 CUDA 版本（按优先顺序）：" + ", ".join(indexes[:-1]), flush=True)
         elif kind == "mps":
             indexes = [None]  # the PyPI wheel already carries Metal on macOS, no extra index needed
@@ -227,6 +268,13 @@ def install(kind, info):
                     if not pip("--force-reinstall", "--no-deps", "torch", "torchvision", "--index-url", url):
                         continue
                 if pip("torch", "torchvision", "--index-url", url):
+                    if kind == "cuda" and index != "cpu":
+                        probe = gpu_probe()
+                        if probe.get("kernel") is False:  # installed, but this build has no kernels for the card
+                            info["no_kernel"] = probe.get("cap")
+                            print(f"{index} 版 PyTorch 跑不了这张显卡（计算能力 {probe.get('cap')}），换更早的 CUDA 版。",
+                                  flush=True)
+                            continue
                     break
         else:
             raise SystemExit("PyTorch 安装失败，见上面的信息。")
@@ -263,10 +311,17 @@ def main():
     if not line:
         raise SystemExit("装完了，但依赖无法导入，见上面的信息。")
     r = json.loads(line[5:])
+    if r["gpu"] and r.get("kernel") is False:  # e.g. a ROCm build, or a manual --kind, that can't run on this card
+        print(f"\n装好了，但 torch {r['torch']} 跑不了这张显卡（{r['gpu']}，计算能力 {r.get('cap')}）："
+              "显卡能识别，这个版本里却没有它能用的计算代码。工具会自动改用 CPU；想用显卡的话，"
+              "请到 https://github.com/CXP-2024/gpt-anime-denoise/issues 附上这段信息。")
+        return
     backend = (f"ROCm {r['hip']}" if r["hip"] else f"CUDA {r['cuda']}" if r["cuda"]
                else "Metal / MPS" if r.get("mps") else "CPU")
     print(f"\n完成：torch {r['torch']} · {backend} · " + (f"显卡 {r['gpu']}" if r["gpu"] else "使用 CPU"))
-    if kind == "cuda" and index == "cpu":  # no CUDA build could be installed, so the driver is not the cause
+    if kind == "cuda" and index == "cpu" and info.get("no_kernel"):
+        print(f"这张显卡（计算能力 {info['no_kernel']}）太老，能装的 CUDA 版 PyTorch 都跑不了它，现在用的是 CPU 版。")
+    elif kind == "cuda" and index == "cpu":  # no CUDA build could be installed, so the driver is not the cause
         print("没能装上 CUDA 版 PyTorch，原因见上面 pip 的信息。现在用的是 CPU 版，解决后再运行一次 setup_env.py。")
     elif kind in ("cuda", "rocm") and not r["gpu"]:
         print(f"环境可以用，但现在只能跑 CPU。请更新显卡驱动（{DRIVER_PAGE[kind]}），重启后再打开。")
