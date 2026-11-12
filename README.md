@@ -1,8 +1,8 @@
 # gpt-anime-denoise
 
-去掉 GPT 生图（gpt-image-2 / 2.5 / 2.6、ChatGPT、Codex 内置 image_gen）在**二次元 / 番剧画风**图里留下的**鱼鳞状噪点**。
+去除 GPT 生图（gpt-image-2 / 2.5 / 2.6、ChatGPT、Codex 内置 image_gen）在**二次元 / 番剧画风**图里留下的 **GPT 风味噪点**，包括但不限于鱼鳞状纹理、碎片化细节、碎片化阴影，不重画画面。
 
-Removes the fish-scale texture that OpenAI's GPT image models leave in anime and TV-anime style images, without redrawing the picture.
+Removes the "GPT-flavoured" noise OpenAI's GPT image models leave in anime and TV-anime style images (fish-scale texture, fragmented detail, fragmented shading and the like) without redrawing the picture.
 
 **默认推荐：ESRGAN 缩 60% + L0 0.001** —— 对动漫与番剧画风有奇效。写实风格的图也用这个默认方案：我们试过几种专门为照片训练的去噪 / 超分模型，都不如它（见[写实风格的图](#写实风格的图)）。
 

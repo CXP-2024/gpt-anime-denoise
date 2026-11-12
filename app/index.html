@@ -68,9 +68,11 @@
   /* ---------- top bar ---------- */
   .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 18px; background: var(--panel); border-bottom: 1px solid var(--line); }
   .mark { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; }
-  .brand b { font-size: 15px; font-weight: 650; letter-spacing: .1px; }
-  .brand span { color: var(--muted); font-size: 12.5px; margin-left: 10px; }
-  .top-actions { margin-left: auto; display: flex; gap: 2px; }
+  .brand { display: flex; align-items: baseline; min-width: 0; }
+  .brand b { font-size: 15px; font-weight: 650; letter-spacing: .1px; flex: none; }
+  /* the tagline gives way to the buttons on the right: cut with an ellipsis, full text in the tooltip */
+  .brand span { color: var(--muted); font-size: 12.5px; margin-left: 10px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-actions { margin-left: auto; display: flex; gap: 2px; flex: none; }
   .tbtn { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 11px; border-radius: 8px; color: var(--text-2); font-size: 13px; }
   .tbtn:hover { background: var(--panel-2); color: var(--text); }
 
@@ -341,7 +343,7 @@
 <div class="app">
   <header class="top">
     <div class="mark"><svg width="16" height="16" fill="#fff"><use href="#i-spark"/></svg></div>
-    <div class="brand"><b>Anime Denoise</b><span>GPT 二次元图去鱼鳞纹</span></div>
+    <div class="brand"><b>Anime Denoise</b><span title="去除 GPT 风味噪点（包括但不限于鱼鳞状纹理、碎片化细节、碎片化阴影）">去除 GPT 风味噪点（包括但不限于鱼鳞状纹理、碎片化细节、碎片化阴影）</span></div>
     <div class="top-actions">
       <span class="chip-dev" id="devChip" title="图片只在这台电脑上处理" hidden><i></i><span id="devName">本机处理</span></span>
       <button class="tbtn" id="openOut" title="打开输出文件夹"><svg class="i"><use href="#i-folder"/></svg><span>输出文件夹</span></button>

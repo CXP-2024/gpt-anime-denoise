@@ -1,9 +1,9 @@
 ---
 name: gpt-anime-denoise
-description: Remove the fish-scale (鱼鳞纹) noise that GPT image models (gpt-image-2/2.5/2.6, ChatGPT, Codex image_gen) leave in anime, illustration and TV-anime style images. Use after generating or receiving any GPT-made anime image that will be delivered, or when the user mentions 鱼鳞纹, 鳞片噪点, GPT 图噪点, fish-scale artifacts, or cleaning GPT anime images.
+description: Remove the "GPT-flavoured" noise (fish-scale texture 鱼鳞纹, fragmented detail, fragmented shading) that GPT image models (gpt-image-2/2.5/2.6, ChatGPT, Codex image_gen) leave in anime, illustration and TV-anime style images. Use after generating or receiving any GPT-made anime image that will be delivered, or when the user mentions 鱼鳞纹, 鳞片噪点, GPT 风味噪点, GPT 图噪点, 碎片化细节, 碎片化阴影, fish-scale artifacts, or cleaning GPT anime images.
 ---
 
-# GPT 二次元图去鱼鳞纹
+# 去除 GPT 二次元图的风味噪点
 
 GPT 生图在二次元 / 番剧画风里会留下细密的鱼鳞状纹理。人眼在原尺寸下能看出来，但放大、高通滤波和频谱分析都不容易检测到——**不要自己判断"这张图没有噪点"**，每张要交付的 GPT 二次元图都跑一遍。
 
