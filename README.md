@@ -86,6 +86,7 @@ Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOIS
 ### 主要功能
 
 - **拖进来就去噪**：拖入、点击选择或 Ctrl+V 粘贴，可以一次放多张，底部缩略图排队依次处理；RTX 5080 上一张约 1 秒。
+- **图片尺寸**：推荐 1000 万像素以内（GPT 出图的尺寸都在这个范围内）。更大的图也照常处理，只是会提示：RTX 5080（16 GB 显存）上 2400 万像素约 25 秒，4700 万像素因为显存不够、L0 平滑改在 CPU 上跑，要 6 分钟左右，网页也会变卡。超过 1 亿像素时浏览器无法显示，会请你先缩小。限制看的是像素数，不是文件大小：同一张图存成 JPEG 可能只有几 MB，存成 PNG 可能有几十 MB。放大过的图，鱼鳞纹也跟着变粗，先缩回原始尺寸再去噪效果更好。
 - **三档强度 + 微调**：轻柔（80% · 0.0006）/ 推荐（60% · 0.001）/ 强力（45% · 0.0018），下面的「微调参数」可以单独调预缩比例和 L0；松手就重跑，只改 L0 时复用超分结果，约 0.3 秒。正在处理时改参数，旧任务会立刻中止，直接按新参数重来。每张图记住自己的参数。
 - **对比查看**：对比 / 原图 / 结果三种视图；拖分割线比较，或按 `X` 在全屏原图和全屏结果之间直接切换（没有分割线）；滚轮缩放（200% 以上按原像素显示），拖动平移，按住 Z 临时看原图。
 - **局部保护**：用保护笔刷涂、用磁性套索圈，或一键自动选中人物，涂过、圈过的地方按比例混回原图，不用重跑模型；配合反选，可以只给背景或只给人物去噪。详见下面两节。
@@ -271,6 +272,7 @@ GPT 出的写实图也有这种细碎纹理，画面细节越多、灯光越复�
 - [@SugarCatCat](https://github.com/SugarCatCat) 在 [PR #5](https://github.com/CXP-2024/gpt-anime-denoise/pull/5) 里加了 Apple Silicon（M 系列 Mac）的 Metal 加速和对应的一键安装，感谢。
 - [@Moemu](https://github.com/Moemu) 在 [PR #6](https://github.com/CXP-2024/gpt-anime-denoise/pull/6) 里让一键安装认得新版 NVIDIA 驱动的 `nvidia-smi`（“CUDA UMD Version”），感谢。
 - [@Plastic-time](https://github.com/Plastic-time) 在 [PR #7](https://github.com/CXP-2024/gpt-anime-denoise/pull/7)–[#12](https://github.com/CXP-2024/gpt-anime-denoise/pull/12) 里修了六个问题：路径带空格或逗号时「在文件夹中显示」打开错文件夹、粘贴的图片重开后被覆盖、`--l0` 为 0 时报错和负数时死循环、已装 CPU 版 torch 时一键安装装不上 CUDA 版、依赖缺 psutil 导致 CPU 上的内存估算不准、一键安装下载新 torch 失败时会把能用的旧 torch 先卸掉，感谢。
+- [@WanX609](https://github.com/WanX609) 在 [issue #14](https://github.com/CXP-2024/gpt-anime-denoise/issues/14) 里查清了大图上传只报 Failed to fetch 的原因（后台没读完请求就回错误，连接被重置），并给出了修法，感谢。
 
 ## 许可
 

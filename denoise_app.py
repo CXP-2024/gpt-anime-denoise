@@ -69,8 +69,15 @@ MODELS_DIR = Path.home() / ".cache" / "gpt-anime-denoise"
 DEVICE = dn.default_device()
 DEVICE_NAME = (dn.torch.cuda.get_device_name(0) if DEVICE == "cuda"
                else "Apple GPU (MPS)" if DEVICE == "mps" else "CPU")  # ASCII: it also goes into a response header
-MAX_BYTES = 80 * 1024 * 1024
-MAX_PIXELS = 16_777_216  # 4096 x 4096
+MAX_BYTES = 1024 * 1024 * 1024  # a safety net only; the real limit is MAX_PIXELS
+DRAIN_MAX = 2 * 1024 * 1024 * 1024  # an oversized upload up to this size is read and dropped so the error reaches the page
+# Size guidance, in pixels (file size says little: the same image is a few MB as JPEG and tens of MB as PNG).
+# Up to RECOMMEND_PIXELS: GPT output sizes, a few seconds. Above it the page notes it; above WARN_PIXELS it warns
+# (measured on an RTX 5080 16 GB: 24 MP 25 s, 47 MP 6 min because L0 no longer fits on the GPU), but still processes.
+# MAX_PIXELS is a hard limit only because the page keeps several full-size canvases and browsers give up beyond it.
+RECOMMEND_PIXELS = 10_000_000
+WARN_PIXELS = 25_000_000
+MAX_PIXELS = 100_000_000
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS * 2
 TOKEN = secrets.token_urlsafe(24)  # injected into the page; every POST must carry it
 
@@ -137,14 +144,15 @@ def decode(data):
             if getattr(im, "is_animated", False):
                 raise ValueError("请使用静态图片；动图请先导出要处理的那一帧")
             if im.width * im.height > MAX_PIXELS:
-                raise ValueError(f"图片太大（{im.width}×{im.height}），最多约 1677 万像素")
+                raise ValueError(f"图片太大（{im.width}×{im.height}，{im.width * im.height / 1e4:.0f} 万像素），"
+                                 "超过 1 亿像素，浏览器无法显示和编辑，请先缩小")
             if min(im.size) < 16:
                 raise ValueError("图片至少要 16×16")
         return dn.open_image(io.BytesIO(data))
     except UnidentifiedImageError:
         raise ValueError("读不出这张图，支持 PNG、JPEG、WebP、BMP、GIF、TIFF、AVIF") from None
     except Image.DecompressionBombError:
-        raise ValueError("图片太大，最多约 1677 万像素") from None
+        raise ValueError("图片太大，超过 1 亿像素，请先缩小") from None
 
 
 def normalize(data):
@@ -223,6 +231,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if self.close_connection:
+            self.send_header("Connection", "close")
         for k, v in (headers or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -247,7 +257,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/info":
             self._json({"app": "anime-denoise", "version": VERSION, "pid": os.getpid(), "busy": progress["busy"],
                         "device": DEVICE_NAME, "gpu_note": dn.GPU_NOTE, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT),
-                        "seg_ready": (MODELS_DIR / dn.MODELS["animeseg"][0]).is_file()})
+                        "max_bytes": MAX_BYTES, "pixels": {"recommend": RECOMMEND_PIXELS, "warn": WARN_PIXELS, "max": MAX_PIXELS}, "seg_ready": (MODELS_DIR / dn.MODELS["animeseg"][0]).is_file()})
         elif path == "/api/progress":
             p = dict(progress)
             p["elapsed"] = round(time.time() - p["started"], 1) if p["busy"] else 0
@@ -260,16 +270,37 @@ class Handler(BaseHTTPRequestHandler):
         good_origin = origin is None or re.fullmatch(r"http://(127\.0\.0\.1|localhost):%d" % self.server.server_port, origin)
         return bool(good_origin) and secrets.compare_digest(self.headers.get("X-Token", ""), TOKEN)
 
+    def _discard(self):
+        # Read an unwanted request body before answering: a reply sent while the body is still arriving makes
+        # Windows reset the connection, and the browser then shows only "Failed to fetch" instead of our message.
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            n = 0
+        if n > DRAIN_MAX:  # not worth reading; answer and close, the page checks the size before sending anyway
+            self.close_connection = True
+            return
+        while n > 0:
+            chunk = self.rfile.read(min(n, 1 << 20))
+            if not chunk:
+                break
+            n -= len(chunk)
+
     def _body(self, limit=MAX_BYTES):
-        n = int(self.headers.get("Content-Length", 0))
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            n = 0
         if not 0 < n <= limit:
-            raise ValueError("图片为空或超过 80 MB")
+            self._discard()
+            raise ValueError("图片为空" if n <= 0 else f"图片 {n / 2**20:.0f} MB，超过工具 {limit // 2**20} MB 的上限，请先压缩或裁小再试")
         return self.rfile.read(n)
 
     def do_POST(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if not self._allowed():
+            self._discard()
             return self._json({"error": "页面已过期，请刷新或重新打开工具"}, 403)
         try:
             if u.path == "/api/denoise":

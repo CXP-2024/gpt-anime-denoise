@@ -593,8 +593,20 @@ const strokeC = mk(), strokeFeatherC = mk();  // the stroke being painted now, f
 const g2 = (c, read) => c.getContext("2d", read ? { willReadFrequently: true } : undefined);
 function fit2(c, w, h) { if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
 
+const MB = n => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0) + " MB";
 async function api(path, opts = {}) {
-  const r = await fetch(path, { ...opts, headers: { "X-Token": TOKEN, ...(opts.headers || {}) } });
+  const max = (S.info && S.info.max_bytes) || 80 * 2 ** 20, body = opts.body;
+  if (body instanceof Blob && body.size > max)  // the server would refuse it anyway: say so without sending 80+ MB
+    throw new Error(`这张图 ${MB(body.size)}，超过工具 ${MB(max)} 的上限，请先压缩或裁小再试`);
+  let r;
+  try {
+    r = await fetch(path, { ...opts, headers: { "X-Token": TOKEN, ...(opts.headers || {}) } });
+  } catch (e) {
+    if (e.name === "AbortError") throw e;
+    // "Failed to fetch" means either the tool is gone or the upload broke off: ask the tool which one it is
+    const alive = await fetch("/api/info", { cache: "no-store" }).then(x => x.ok, () => false);
+    throw new Error(alive ? "上传中断了，可能是图片太大或网络被打断，请重试" : "连不上去噪工具：它可能已经关掉了，请重新双击「去噪工具」启动，再刷新这个页面");
+  }
   if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error || m; } catch {} throw new Error(m); }
   return r;
 }
@@ -674,6 +686,14 @@ function pasteStamp(d = new Date()) {
   const p = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
+// Large images are processed anyway; the page only says what to expect (limits come from the server's /api/info).
+function sizeNote(name, w, h) {
+  const px = w * h, lim = (S.info && S.info.pixels) || { recommend: 1e7, warn: 2.5e7 }, mp = Math.round(px / 1e4);
+  if (px > lim.warn)
+    toast(`${name}：${w}×${h}，约 ${mp} 万像素，图很大。照常处理，但可能要几分钟（显存不够时一部分会改用 CPU），网页也会变卡；推荐先缩小到 ${lim.recommend / 1e4} 万像素以内（长边 3000–4000 左右）再处理，效果通常也更好`, "err", 12000);
+  else if (px > lim.recommend)
+    toast(`${name}：${w}×${h}，约 ${mp} 万像素，比推荐的 ${lim.recommend / 1e4} 万像素大，处理会慢一些。照常处理；图是放大过的话，先缩回原始尺寸效果更好`, "", 8000);
+}
 async function addFiles(list, pasted) {
   const files = [...list].filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|jfif|webp|bmp|gif|tiff?|avif|tga)$/i.test(f.name));
   if (!files.length) return toast("没有可用的图片（PNG / JPEG / WebP / BMP / GIF / TIFF / AVIF）", "err");
@@ -689,6 +709,7 @@ async function addFiles(list, pasted) {
       url = URL.createObjectURL(blob); img = await loadImg(url);
     } catch (e) { if (url) URL.revokeObjectURL(url); toast(`${f.name || "图片"}：${e.message}`, "err", 6000); continue; }
     const w = img.naturalWidth, h = img.naturalHeight;
+    sizeNote(f.name || "粘贴的图片", w, h);
     const id = nextId++;
     const name = pasted || !f.name || f.name === "image.png" ? `粘贴的图片-${stamp}-${id}.png` : f.name;
     const mask = mk(); mask.width = w; mask.height = h;
