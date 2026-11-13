@@ -96,6 +96,40 @@ def get_model(key):
     return models[key]
 
 
+def get_segmenter():
+    """The anime character segmenter, downloaded (~195 MB, SHA-256 checked) the first time it is asked for."""
+    if "animeseg" not in models:
+        import animeseg
+        stage("首次使用：下载人物识别模型（约 195 MB，只下载一次）")
+        try:
+            models["animeseg"] = animeseg.load(dn.fetch("animeseg", MODELS_DIR), DEVICE)
+        except SystemExit as e:
+            raise RuntimeError("人物识别模型下载不完整（校验不符），请检查网络后重试") from e
+        except OSError as e:
+            raise RuntimeError(f"人物识别模型下载失败，请检查网络后重试（{e}）") from None
+    return models["animeseg"]
+
+
+def segment(data):
+    """PNG (8-bit grey) of how likely each pixel belongs to a character; transparent pixels count as background."""
+    import animeseg
+    src, alpha, _ = decode(data)
+    with lock:  # one model on the GPU at a time
+        progress.update(busy=True, started=time.time(), job="")
+        try:
+            net = get_segmenter()
+            stage("识别人物")
+            m = animeseg.character_mask(net, dn.to_arr(src).astype("float32"), DEVICE)
+        finally:
+            progress.update(busy=False, stage="", job="")
+            dn._clear(DEVICE)
+    if alpha is not None:
+        m = m * (dn.np.asarray(alpha, dn.np.float32) / 255)
+    buf = io.BytesIO()
+    Image.fromarray((m * 255 + 0.5).astype("uint8"), "L").save(buf, "PNG", compress_level=1)
+    return buf.getvalue(), float(m.mean())
+
+
 def decode(data):
     """Size / animation checks, then denoise.open_image: (rgb, alpha or None, icc or None)."""
     try:
@@ -212,7 +246,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, ICON.read_bytes(), "image/x-icon")
         elif path == "/api/info":
             self._json({"app": "anime-denoise", "version": VERSION, "pid": os.getpid(), "busy": progress["busy"],
-                        "device": DEVICE_NAME, "gpu_note": dn.GPU_NOTE, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT)})
+                        "device": DEVICE_NAME, "gpu_note": dn.GPU_NOTE, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT),
+                        "seg_ready": (MODELS_DIR / dn.MODELS["animeseg"][0]).is_file()})
         elif path == "/api/progress":
             p = dict(progress)
             p["elapsed"] = round(time.time() - p["started"], 1) if p["busy"] else 0
@@ -248,6 +283,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, png, "image/png", {
                     "X-Elapsed": f"{elapsed:.1f}", "X-Device": DEVICE_NAME, "X-Size": f"{w}x{h}",
                     "X-SR-Cached": "1" if cached else "0", "X-Alpha": "1" if has_alpha else "0"})
+            if u.path == "/api/segment":
+                png, share = segment(self._body())
+                return self._send(200, png, "image/png", {"X-Share": f"{share:.4f}"})
             if u.path == "/api/convert":
                 png, (w, h), has_alpha = normalize(self._body())
                 return self._send(200, png, "image/png", {"X-Size": f"{w}x{h}", "X-Alpha": "1" if has_alpha else "0"})

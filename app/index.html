@@ -399,7 +399,8 @@
           <button class="btn" id="lassoBtn" title="磁性套索（L）：沿轮廓自动吸附，圈住的地方保持原图；再按 L 完成，Esc 放弃"><svg class="i"><use href="#i-lasso"/></svg><span id="lassoBtnText">磁性套索</span><kbd>L</kbd></button>
           <button class="btn" id="invertBtn" title="反选（I）：保护区和去噪区互换"><svg class="i"><use href="#i-invert"/></svg>反选<kbd>I</kbd></button>
         </div>
-        <p class="hint">腮红排线、细纹理、小字被抹掉了？涂上去就按比例混回原图，边缘自动柔化，马上生效。只想去背景：用磁性套索圈住人物；只想去人物：圈完再点反选。</p>
+        <button class="btn wide" id="autoSelBtn" style="margin-top:6px" title="自动选中人物（A）：AI 识别画面里的二次元人物，填进保护区（只给背景去噪）；再按 I 反选就只给人物去噪"><svg class="i"><use href="#i-spark"/></svg><span id="autoSelText">自动选中人物</span><kbd>A</kbd></button>
+        <p class="hint">腮红排线、细纹理、小字被抹掉了？涂上去就按比例混回原图，边缘自动柔化，马上生效。只想去背景：点「自动选中人物」（二次元图）或用磁性套索圈住人物；只想去人物：选完再点反选。</p>
         <div class="protect-sum" id="protectSum" hidden><span class="dot"></span><span id="protectSumText"></span><button class="linkbtn" id="clearMask">清除</button></div>
       </section>
 
@@ -468,6 +469,7 @@
         <button class="ib" id="bUndo" title="撤销（Ctrl+Z）"><svg class="i"><use href="#i-undo"/></svg></button>
         <button class="ib" id="bRedo" title="重做（Ctrl+Shift+Z）"><svg class="i"><use href="#i-redo"/></svg></button>
         <button class="ib" id="bEye" title="涂完自动隐藏范围（点击改成一直显示）；按住 M 看全部涂抹"><svg class="i"><use id="bEyeIcon" href="#i-eye-auto"/></svg></button>
+        <button class="ib" id="bAuto" title="自动选中人物（A）：AI 识别人物，填进保护区"><svg class="i"><use href="#i-spark"/></svg></button>
         <button class="ib" id="bInvert" title="反选（I）：保护区和去噪区互换（可撤销）"><svg class="i"><use href="#i-invert"/></svg></button>
         <button class="ib" id="bClear" title="清除全部（可撤销）"><svg class="i"><use href="#i-trash"/></svg></button>
         <span class="saved" id="bSaved"></span>
@@ -533,6 +535,7 @@
       <div><span>适合画面 / 100%</span><span><kbd>F</kbd> <kbd>0</kbd> · <kbd>Ctrl</kbd>+<kbd>0</kbd> <kbd>1</kbd></span></div>
       <div><span>拖动画面</span><span>按住 <kbd>空格</kbd> · 中键</span></div>
       <div><span>上一张 / 下一张</span><span><kbd>←</kbd> <kbd>→</kbd></span></div>
+      <div><span>自动选中人物（AI，二次元图）</span><span><kbd>A</kbd></span></div>
       <div><span>反选保护区</span><span><kbd>I</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></span></div>
       <div><span>套索闭合 / 删上个锚点</span><span><kbd>↵</kbd> <kbd>⌫</kbd></span></div>
       <div><span>撤销 / 重做</span><span><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></span></div>
@@ -1021,6 +1024,8 @@ function syncPanel() {
   $("#lassoBtn").classList.toggle("on", inLasso);
   $("#lassoBtnText").textContent = inLasso ? "完成套索" : "磁性套索";
   $("#invertBtn").disabled = $("#bInvert").disabled = !masked;
+  $("#autoSelBtn").disabled = $("#bAuto").disabled = !it || !!it.segBusy;
+  $("#autoSelText").textContent = it && it.segBusy ? "正在识别人物…" : "自动选中人物";
   $("#bSaved").textContent = it && it.saved && S.brushMode ? "已保存" : $("#bSaved").textContent;
 }
 
@@ -1201,7 +1206,7 @@ function syncBrushUI() {
   // the lasso fills an outline, so brush size does not apply: grey it out but keep its place, so the tool buttons don't move
   $("#bSizeField").classList.toggle("off", lasso); $("#bSize").disabled = lasso;
   $("#fbProtect").hidden = paint; $("#fbPaint").hidden = !paint;
-  $("#bInvert").hidden = $("#bEye").hidden = paint;  // these two are about the protected area only
+  $("#bInvert").hidden = $("#bEye").hidden = $("#bAuto").hidden = paint;  // these two are about the protected area only
   $("#pColor").value = P.color; $("#pSwatch").style.background = P.color;
   $("#pSize").value = P.size; $("#pSizeOut").textContent = P.size;
   $("#pHard").value = P.hard; $("#pHardOut").textContent = P.hard + "%";
@@ -1343,6 +1348,44 @@ function invertMask() {
   toast(it.hasMask ? "已反选：原来去噪的地方改为保持原图，原来保持原图的地方改为去噪（Ctrl+Z 可撤销）" : "反选后没有保护区了（整张都已保护时反选 = 整张去噪）", "", 4200);
 }
 
+/* ---------------- auto-select the character ---------------- */
+// SkyTNT anime-segmentation on the server returns a grey map (white = character). It is added to the protected area
+// at the current "恢复原图" strength, keeping what was already painted (lighten), so it combines with brush and lasso.
+async function autoSelect() {
+  const it = S.cur;
+  if (!it || it.segBusy) return;
+  lassoFinish();
+  it.segBusy = true; syncPanel();
+  if (!(S.info && S.info.seg_ready)) toast("第一次使用要下载人物识别模型（约 195 MB，只下载一次），请稍等", "", 6000);
+  try {
+    const r = await api("/api/segment", { method: "POST", body: it.file });
+    const share = +r.headers.get("X-Share") || 0;
+    const bmp = await createImageBitmap(await r.blob());
+    if (S.info) S.info.seg_ready = true;
+    if (share < 0.005) return toast("没有认出人物：自动选中只认二次元风格的人物，写实照片或纯风景请用磁性套索", "err", 6000);
+    const t = mk(); fit2(t, it.w, it.h);
+    const tc = g2(t, true); tc.drawImage(bmp, 0, 0, it.w, it.h);
+    const p = tc.getImageData(0, 0, it.w, it.h).data;
+    const c = g2(it.mask, true), im = c.getImageData(0, 0, it.w, it.h), d = im.data, s = S.mix / 100;
+    pushUndo(it);
+    for (let i = 0; i < d.length; i += 4) {
+      const v = p[i] < 38 ? 0 : Math.round(p[i] * s);  // below ~15 % is background noise of the model
+      if (v > d[i]) d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 255;
+    }
+    c.putImageData(im, 0, 0);
+    it.hasMask = hasPixels(it);
+    composite(); scheduleSave(it); renderStrip();
+    flashAll(1500);
+    toast(`已自动选中人物（约占画面 ${Math.round(share * 100)}%），人物保持原图、只给背景去噪。想反过来只给人物去噪：按 I 反选。边缘不准可以用笔刷或橡皮补（Ctrl+Z 可撤销）`, "", 7000);
+  } catch (err) {
+    toast("自动选中失败：" + err.message, "err", 8000);
+  } finally {
+    it.segBusy = false; syncPanel();
+  }
+}
+$("#autoSelBtn").onclick = $("#bAuto").onclick = () => autoSelect();
+
 /* ---------------- magnetic lasso ---------------- */
 // Live-wire ("intelligent scissors"): the outline from the last anchor to the cursor is the cheapest route over an
 // edge-cost map, so it hugs the strongest nearby contour. Anchors drop automatically as the cursor travels.
@@ -1384,6 +1427,10 @@ function edgeMap(it) {
   };
   for (let y = 1; y < h - 1; y++)
     for (let x = 1, i = y * w + 1; x < w - 1; x++, i++) e[i] = Math.min(255, Math.max(sob(bl, i), sob(alp, i)) / 4);  // transparent edges count too
+  // the picture's own border is a boundary too: an outline swept outside the image runs along it (a figure that
+  // fills the whole height is cut off by the top and bottom of the picture)
+  for (let x = 0; x < w; x++) e[x] = e[(h - 1) * w + x] = 255;
+  for (let y = 0; y < h; y++) e[y * w] = e[y * w + w - 1] = 255;
   it.edge = { src, e };
   return e;
 }
@@ -1471,7 +1518,9 @@ function lassoUpdate() {
   L.raf = 0;
   const it = S.cur;
   if (!L.on || it !== L.it || !L.want || !S.vp) return;
-  const e = edgeMap(it), a = lassoLast(), raw = clampPt(it, L.want), p = snap(e, it, raw);
+  const e = edgeMap(it), a = lassoLast(), raw = clampPt(it, L.want);
+  const outside = L.want[0] < 0 || L.want[1] < 0 || L.want[0] >= it.w || L.want[1] >= it.h;
+  const p = outside ? raw : snap(e, it, raw);  // outside the picture: stay on its border, don't get pulled inward
   const n = L.pts.length / 2 + L.live.length / 2;
   L.near = n > 8 && Math.hypot(raw[0] - L.pts[0], raw[1] - L.pts[1]) * S.vp.s < 10;
   L.live = L.near ? liveWire(e, it.w, it.h, a, [L.pts[0], L.pts[1]]) : liveWire(e, it.w, it.h, a, p);
@@ -1483,7 +1532,8 @@ function lassoDown(pt, ev) {
   const it = S.cur, raw = clampPt(it, pt);
   if (!L.on) {
     if (ev.button !== 0) return;
-    const p = snap(edgeMap(it), it, raw);
+    const out = pt[0] < 0 || pt[1] < 0 || pt[0] >= it.w || pt[1] >= it.h;
+    const p = out ? raw : snap(edgeMap(it), it, raw);
     Object.assign(L, { on: true, it, pts: [p[0], p[1]], anchors: [0], live: [], want: pt, near: false });
     lassoDraw();
     return;
@@ -1779,7 +1829,7 @@ stage.addEventListener("pointermove", e => {
   const r = stage.getBoundingClientRect();
   if (S.brushMode && S.tool === "paint" && !drag) S.pickHeld = e.altKey || e.ctrlKey;  // keys pressed outside the window
   cursorPt = !drag && onUI(e) ? null : [e.clientX - r.left, e.clientY - r.top]; updateCursor();  // no brush circle over the toolbar
-  if (L.on && !drag && S.vp && !onUI(e)) lassoMove(toImg(e, r));
+  if (L.on && !drag && S.vp) lassoMove(toImg(e, r));  // also under the tool bar: it covers the top of a fitted picture
   if (!drag) return;
   if (drag.t === "split") { S.split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); render(); }
   else if (drag.t === "paint") strokeTo(toImg(e, r));
@@ -1857,6 +1907,7 @@ addEventListener("keydown", e => {
     // L toggles the lasso (an open outline is closed and kept); Esc leaves the brush or the lasso (an open outline is dropped)
     l: () => { if (!e.repeat) S.brushMode && S.tool === "lasso" ? setBrushMode(false) : setBrushMode(true, "lasso"); },
     i: () => { if (!e.repeat) invertMask(); },
+    a: () => { if (!e.repeat) autoSelect(); },
     ...(L.on && {  // only while an outline is open, so Enter still presses a focused button otherwise
       enter: () => lassoClose(false),
       backspace: lassoBack,

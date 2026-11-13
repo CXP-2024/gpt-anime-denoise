@@ -37,11 +37,14 @@ MODELS = {
               "https://huggingface.co/camenduru/APISR/resolve/main/2x_APISR_RRDB_GAN_generator.pth"),
     "cugan": ("up2x-latest-denoise3x.pth",
               "https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip"),
+    # the web app's "auto-select the character" (animeseg.py), downloaded only when that button is used
+    "animeseg": ("anime-seg_isnetis.safetensors", "https://huggingface.co/skytnt/anime-seg/resolve/main/model.safetensors"),
 }
 SHA256 = {
     "RealESRGAN_x4plus_anime_6B.pth": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da",
     "2x_APISR_RRDB_GAN_generator.pth": "3b0d2b3a3c0461ac17d00f4f32240666fb832b738ea5a48449b1acf07fbb07e5",
     "up2x-latest-denoise3x.pth": "0a14739f3f5fcbd74ec3ce2806d13a47916c916b20afe4a39d95f6df4ca6abd8",
+    "anime-seg_isnetis.safetensors": "3351563ba8b61a01a66bacb79cf36aabce2da62d88b7606a719f573f23fe5d3e",
 }
 DOWN = 0.6
 L0 = 0.001  # recommended default; tune with --l0 (larger = flatter, too large wipes soft blush/gradients)
