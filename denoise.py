@@ -9,7 +9,8 @@ With an NVIDIA GPU both steps run on it (about 2 s for a 1.6 MP image); without 
   python denoise.py ./folder --out ./cleaned             # every image in a folder
   python denoise.py image.png --l0 0.002                 # stronger L0 (0.001 is only the recommended value)
 
-Outputs keep the input size. Models are downloaded on first use into --models (default ~/.cache/gpt-anime-denoise).
+Outputs keep the input size. Models are downloaded on first use into --models (default: the models folder next to
+this file; copies already in ~/.cache/gpt-anime-denoise from older versions are used as they are).
 """
 import argparse
 import hashlib
@@ -55,21 +56,80 @@ LABELS = {"original": "original", "l0_0.0005": "L0 0.0005", "l0_0.001": "L0 0.00
 SHEET_ORDER = ["original", "l0_0.0005", "l0_0.001", "apisr", "cugan60", "cugan60_l0", "esrgan60", "esrgan60_l0"]
 
 
-def fetch(key, folder):
+ROOT = Path(__file__).resolve().parent
+MODELS_DIR = ROOT / "models"  # next to the code, so the whole folder can be copied to another computer as it is
+LEGACY_DIR = Path.home() / ".cache" / "gpt-anime-denoise"  # where versions up to 1.4.1 put them
+HF_MIRROR = "https://hf-mirror.com"  # tried when huggingface.co can't be reached; the SHA-256 check still applies
+
+
+_verified = set()  # model files whose SHA-256 was checked in this run
+
+
+class DownloadError(RuntimeError):
+    """A model could not be downloaded; the message says where to get it by hand and where to put it."""
+
+
+def model_path(key, folder=MODELS_DIR):
+    """The model file if it is already there (in folder, or for the default folder also the old ~/.cache), else None."""
+    name = MODELS[key][0]
+    for d in [Path(folder)] + ([LEGACY_DIR] if Path(folder).resolve() == MODELS_DIR else []):
+        if (d / name).is_file():
+            return d / name
+    return None
+
+
+def manual_hint(key, folder=MODELS_DIR):
     name, url = MODELS[key]
-    path = folder / name
-    if path.exists():
-        return path
-    folder.mkdir(parents=True, exist_ok=True)
-    print(f"downloading {name} ...", flush=True)
-    data = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "gpt-anime-denoise"})).read()
     if url.endswith(".zip"):
-        with zipfile.ZipFile(io.BytesIO(data)) as z:
-            data = z.read(next(n for n in z.namelist() if n.endswith(name)))
-    if hashlib.sha256(data).hexdigest() != SHA256[name]:
-        raise SystemExit(f"checksum mismatch for {name} from {url}; not saved")
-    path.write_bytes(data)
-    return path
+        what = f"下载 {url}，把压缩包里的 {name} 放进"
+    elif url.rsplit("/", 1)[1] != name:
+        what = f"下载 {url}，改名为 {name} 放进"
+    else:
+        what = f"下载 {url} 放进"
+    mirror = f"（打不开可以用镜像 {url.replace('https://huggingface.co', HF_MIRROR)}）" if url.startswith("https://huggingface.co/") else ""
+    return f"可以手动{what} {Path(folder).resolve()} 文件夹{mirror}，再重试。"
+
+
+def fetch(key, folder=MODELS_DIR):
+    name, url = MODELS[key]
+    found = model_path(key, folder)
+    if found:  # also a file the user put there by hand: check it once per run (~0.3 s for the largest)
+        if found not in _verified:
+            h = hashlib.sha256()
+            with open(found, "rb") as f:
+                for block in iter(lambda: f.read(1 << 22), b""):
+                    h.update(block)
+            if h.hexdigest() != SHA256[name]:
+                raise DownloadError(f"{found} 不是正确的模型文件（SHA-256 不符，可能没下载完整或下错了文件）。"
+                                    f"请删掉它重试；{manual_hint(key, folder)}")
+            _verified.add(found)
+        return found
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    urls = [url] + ([url.replace("https://huggingface.co", HF_MIRROR)] if url.startswith("https://huggingface.co/") else [])
+    errors = []
+    for u in urls:
+        print(f"downloading {name} from {u} ...", flush=True)
+        try:
+            # timeout applies to each network read, so a dead connection fails instead of hanging; urllib uses the
+            # HTTP(S)_PROXY variables or, on Windows, the system proxy
+            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "gpt-anime-denoise"}),
+                                        timeout=60) as r:
+                data = r.read()
+            if u.endswith(".zip"):
+                with zipfile.ZipFile(io.BytesIO(data)) as z:
+                    data = z.read(next(n for n in z.namelist() if n.endswith(name)))
+        except Exception as e:
+            errors.append(f"{u.split('/')[2]}：{e}")
+            continue
+        if hashlib.sha256(data).hexdigest() != SHA256[name]:
+            errors.append(f"{u.split('/')[2]}：下载的文件校验不符（不完整或被替换），没有保存")
+            continue
+        tmp = folder / (name + ".part")
+        tmp.write_bytes(data)
+        tmp.replace(folder / name)
+        return folder / name
+    raise DownloadError(f"模型 {name} 下载失败（{'；'.join(errors)}）。{manual_hint(key, folder)}")
 
 
 def load_model(key, folder, device):
@@ -394,7 +454,7 @@ def main():
     ap.add_argument("--method", default="esrgan60_l0", choices=METHODS)
     ap.add_argument("--l0", type=l0_strength, default=L0,
                     help="L0 strength for the *_l0 methods (default 0.001; try 0.0005-0.002; 0 skips L0)")
-    ap.add_argument("--models", default=str(Path.home() / ".cache" / "gpt-anime-denoise"))
+    ap.add_argument("--models", default=str(MODELS_DIR))
     ap.add_argument("--device", default=default_device())
     a = ap.parse_args()
 
@@ -403,7 +463,10 @@ def main():
         files += sorted(q for q in p.iterdir() if q.suffix.lower() in IMAGE_EXTS) if p.is_dir() else [p]
     methods = METHODS if a.all else [a.method]
     need = {m.split("60")[0] if "60" in m else m for m in methods if not m.startswith("l0_")}
-    models = {k: load_model(k, Path(a.models), a.device) for k in need}
+    try:
+        models = {k: load_model(k, Path(a.models), a.device) for k in need}
+    except DownloadError as e:
+        raise SystemExit(str(e)) from None
 
     for p in files:
         src, alpha, icc = open_image(p)

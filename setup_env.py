@@ -3,6 +3,8 @@
     python setup_env.py                 # detect the graphics card, show the plan, ask, install into .venv
     python setup_env.py --kind cpu      # force a kind: auto / cuda / rocm / mps / cpu
     python setup_env.py --yes           # don't ask
+    python setup_env.py --probe auto    # (去噪工具.bat) can THIS Python run the tool? prints PYEXE=<path> if so
+    pythonw setup_env.py --launch       # (去噪工具.bat) start the web app; show a message box if it fails
 
 What it picks:
 - NVIDIA: the CUDA build of PyTorch. Only the graphics driver is needed, not the CUDA Toolkit, because the wheels
@@ -20,9 +22,12 @@ import json
 import os
 import platform
 import re
+import runpy
 import shutil
 import subprocess
 import sys
+import tempfile
+import traceback
 import urllib.request
 from pathlib import Path
 
@@ -32,6 +37,7 @@ TOOLS = ROOT / ".denoise-tools"
 WINDOWS = os.name == "nt"
 MACOS = sys.platform == "darwin"
 PYTHON = VENV / ("Scripts/python.exe" if WINDOWS else "bin/python")
+CPU_FALLBACK = VENV / ".denoise-cpu.json"  # "this computer's GPU was tried and only the CPU build works"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if WINDOWS else 0
 
 TORCH_INDEX = "https://download.pytorch.org/whl"
@@ -81,12 +87,18 @@ print("CHECK" + json.dumps({"torch": torch.__version__, "hip": getattr(torch.ver
 CUDA13_MIN_CAP = (7, 5)  # PyTorch's CUDA 13 builds start at sm_75 (RTX 20 series); older cards need a CUDA 12 build
 
 
-def capture(cmd, timeout=60):
+def capture(cmd, timeout=60, show_errors=False):
+    """stdout of cmd ("" if it can't run). show_errors: print its stderr, or why it could not run."""
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8",
-                              errors="replace", creationflags=NO_WINDOW).stdout
-    except (OSError, subprocess.SubprocessError):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, encoding="utf-8",
+                           errors="replace", creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError) as error:
+        if show_errors:
+            print(f"无法运行 {cmd[0]}：{error}", file=sys.stderr, flush=True)
         return ""
+    if show_errors and r.stderr.strip():
+        print(r.stderr.rstrip()[-3000:], file=sys.stderr, flush=True)
+    return r.stdout
 
 
 def run(cmd, env=None):
@@ -213,7 +225,7 @@ def other_torch(index):
 
 def gpu_probe():
     """{"cap": "6.1", "kernel": True/False} from .venv's torch; kernel is None when no GPU is visible at all."""
-    out = capture([str(PYTHON), "-c", GPU_PROBE], timeout=300)
+    out = capture([str(PYTHON), "-c", GPU_PROBE], timeout=300, show_errors=True)
     line = next((x for x in out.splitlines() if x.startswith("GPU")), None)
     return json.loads(line[3:]) if line else {}
 
@@ -270,6 +282,9 @@ def install(kind, info):
                 if pip("torch", "torchvision", "--index-url", url):
                     if kind == "cuda" and index != "cpu":
                         probe = gpu_probe()
+                        if not probe:  # torch crashed or timed out before answering: not a pass
+                            print(f"{index} 版 PyTorch 装好了但检查没有完成（原因见上面），换下一个版本。", flush=True)
+                            continue
                         if probe.get("kernel") is False:  # installed, but this build has no kernels for the card
                             info["no_kernel"] = probe.get("cap")
                             print(f"{index} 版 PyTorch 跑不了这张显卡（计算能力 {probe.get('cap')}），换更早的 CUDA 版。",
@@ -284,7 +299,107 @@ def install(kind, info):
     return index
 
 
+def gpu_kind():
+    """"cuda" / "rocm" when this computer has a card the tool can use, else None (no PowerShell call on NVIDIA)."""
+    if MACOS:
+        return None
+    if shutil.which("nvidia-smi"):
+        return "cuda"
+    if WINDOWS and any(ROCM_GPU.search(n) for n in gpu_names()):
+        return "rocm"
+    return None
+
+
+def gpu_fingerprint(kind):
+    """What a CPU fallback depends on: the cards and, for NVIDIA, the driver version."""
+    if kind == "cuda":
+        return capture(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"]).strip()
+    return "; ".join(gpu_names())
+
+
+def probe(mode):
+    """Run by 去噪工具.bat in each candidate Python. Prints PYEXE=<this interpreter> when it can run the tool:
+    the dependencies import and, in mode "auto" on a computer with an NVIDIA / supported AMD card, torch can run a
+    kernel on it (or setup_env.py already found that only the CPU works on this card). Otherwise says why on stderr."""
+    me = sys.executable
+    try:
+        import torch, spandrel, numpy, PIL  # noqa: F401
+    except Exception as error:
+        print(f"[跳过] {me}：缺少依赖（{type(error).__name__}: {error}）", file=sys.stderr)
+        return 1
+    kind = gpu_kind() if mode == "auto" else None
+    if kind:
+        build = torch.version.cuda if kind == "cuda" else getattr(torch.version, "hip", None)
+        problem = None
+        if not build:
+            problem = f"torch {torch.__version__} 是 CPU 版，而这台电脑有 {'NVIDIA' if kind == 'cuda' else 'AMD'} 显卡"
+        elif not torch.cuda.is_available():
+            problem = f"torch {torch.__version__} 用不了显卡（驱动没装好或版本太旧）"
+        else:
+            try:
+                (torch.ones(1, device="cuda") + 1).item()
+            except Exception as error:
+                problem = f"torch {torch.__version__} 在这张显卡上运行出错（{str(error).splitlines()[0]}）"
+        if problem:
+            rec = None
+            if Path(sys.prefix).resolve() == VENV.resolve():
+                try:
+                    rec = json.loads(CPU_FALLBACK.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
+            if not (rec and rec.get("kind") == kind and rec.get("gpu") == gpu_fingerprint(kind)
+                    and rec.get("torch") == torch.__version__):
+                print(f"[跳过] {me}：{problem}", file=sys.stderr)
+                return 1
+            # setup_env.py already tried this card and driver and only the CPU works: don't reinstall every time
+    print("PYEXE=" + me, flush=True)
+    return 0
+
+
+def show_error(title, text):
+    if WINDOWS:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
+    else:
+        print(f"{title}\n{text}", file=sys.stderr)
+
+
+def launch():
+    """Start denoise_app.py in this (windowless pythonw) process. Its output goes to a log in the temp folder; when
+    it stops with an error, a message box shows the end of the log, which is kept. A clean exit deletes the log."""
+    log = Path(tempfile.gettempdir()) / f"anime-denoise-{os.getpid()}.log"
+    f = open(log, "w", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = f
+    code = 0
+    try:
+        sys.argv = [str(ROOT / "denoise_app.py")]
+        runpy.run_path(str(ROOT / "denoise_app.py"), run_name="__main__")
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            if not isinstance(e.code, int):
+                print(e.code)
+            code = e.code if isinstance(e.code, int) else 1
+    except BaseException:
+        traceback.print_exc()
+        code = 1
+    if code:
+        print(f"exit code {code}")
+    f.close()
+    sys.stdout, sys.stderr = sys.__stdout__, sys.__stderr__
+    if code:
+        tail = "\n".join(log.read_text(encoding="utf-8", errors="replace").splitlines()[-15:])
+        show_error("去噪工具启动失败", f"{tail}\n\n完整日志：{log}\n\n看不懂的话，可以把这段信息发到 "
+                   "https://github.com/CXP-2024/gpt-anime-denoise/issues")
+    else:
+        log.unlink(missing_ok=True)
+    return code
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--probe" and sys.argv[2] in ("auto", "any"):
+        raise SystemExit(probe(sys.argv[2]))  # before argparse: this runs in every candidate Python
+    if sys.argv[1:] == ["--launch"]:
+        raise SystemExit(launch())
     ap = argparse.ArgumentParser(description="Install the dependencies into .venv for this computer's graphics card.")
     ap.add_argument("--kind", choices=["auto", "cuda", "rocm", "mps", "cpu"], default="auto")
     ap.add_argument("--yes", action="store_true", help="install without asking")
@@ -306,11 +421,17 @@ def main():
 
     index = install(kind, info)
 
-    out = capture([str(PYTHON), "-c", CHECK], timeout=300)
+    out = capture([str(PYTHON), "-c", CHECK], timeout=300, show_errors=True)
     line = next((x for x in out.splitlines() if x.startswith("CHECK")), None)
     if not line:
         raise SystemExit("装完了，但依赖无法导入，见上面的信息。")
     r = json.loads(line[5:])
+    gpu_works = bool(r["gpu"]) and r.get("kernel") is not False
+    if kind in ("cuda", "rocm") and not gpu_works:  # so the next double-click starts on the CPU instead of reinstalling
+        CPU_FALLBACK.write_text(json.dumps({"kind": kind, "gpu": gpu_fingerprint(kind), "torch": r["torch"]}),
+                                encoding="utf-8")
+    else:
+        CPU_FALLBACK.unlink(missing_ok=True)
     if r["gpu"] and r.get("kernel") is False:  # e.g. a ROCm build, or a manual --kind, that can't run on this card
         print(f"\n装好了，但 torch {r['torch']} 跑不了这张显卡（{r['gpu']}，计算能力 {r.get('cap')}）："
               "显卡能识别，这个版本里却没有它能用的计算代码。工具会自动改用 CPU；想用显卡的话，"

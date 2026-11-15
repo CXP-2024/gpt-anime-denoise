@@ -65,7 +65,7 @@ import denoise as dn  # noqa: E402
 PAGE = HERE / "app" / "index.html"
 ICON = HERE / "app" / "icon.ico"
 OUTPUT = Path(os.environ.get("ANIME_DENOISE_OUTPUT", HERE / "outputs"))
-MODELS_DIR = Path.home() / ".cache" / "gpt-anime-denoise"
+MODELS_DIR = dn.MODELS_DIR
 DEVICE = dn.default_device()
 DEVICE_NAME = (dn.torch.cuda.get_device_name(0) if DEVICE == "cuda"
                else "Apple GPU (MPS)" if DEVICE == "mps" else "CPU")  # ASCII: it also goes into a response header
@@ -94,12 +94,8 @@ def stage(text):
 def get_model(key):
     if key not in models:
         stage("首次使用：加载模型（第一次会自动下载约 18 MB）")
-        try:
-            models[key] = dn.load_model(key, MODELS_DIR, DEVICE)
-        except SystemExit as e:  # denoise.py exits when a downloaded file fails its SHA-256 check
-            raise RuntimeError("模型下载不完整（校验不符），请检查网络后重试") from e
-        except OSError as e:
-            raise RuntimeError(f"模型下载失败，请检查网络后重试（{e}）") from None
+        # a failed download raises dn.DownloadError, whose message names the URL and the folder for a manual copy
+        models[key] = dn.load_model(key, MODELS_DIR, DEVICE)
     return models[key]
 
 
@@ -108,12 +104,7 @@ def get_segmenter():
     if "animeseg" not in models:
         import animeseg
         stage("首次使用：下载人物识别模型（约 195 MB，只下载一次）")
-        try:
-            models["animeseg"] = animeseg.load(dn.fetch("animeseg", MODELS_DIR), DEVICE)
-        except SystemExit as e:
-            raise RuntimeError("人物识别模型下载不完整（校验不符），请检查网络后重试") from e
-        except OSError as e:
-            raise RuntimeError(f"人物识别模型下载失败，请检查网络后重试（{e}）") from None
+        models["animeseg"] = animeseg.load(dn.fetch("animeseg", MODELS_DIR), DEVICE)
     return models["animeseg"]
 
 
@@ -257,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/info":
             self._json({"app": "anime-denoise", "version": VERSION, "pid": os.getpid(), "busy": progress["busy"],
                         "device": DEVICE_NAME, "gpu_note": dn.GPU_NOTE, "down": 0.6, "l0": dn.L0, "output": str(OUTPUT),
-                        "max_bytes": MAX_BYTES, "pixels": {"recommend": RECOMMEND_PIXELS, "warn": WARN_PIXELS, "max": MAX_PIXELS}, "seg_ready": (MODELS_DIR / dn.MODELS["animeseg"][0]).is_file()})
+                        "max_bytes": MAX_BYTES, "pixels": {"recommend": RECOMMEND_PIXELS, "warn": WARN_PIXELS, "max": MAX_PIXELS}, "seg_ready": dn.model_path("animeseg", MODELS_DIR) is not None})
         elif path == "/api/progress":
             p = dict(progress)
             p["elapsed"] = round(time.time() - p["started"], 1) if p["busy"] else 0

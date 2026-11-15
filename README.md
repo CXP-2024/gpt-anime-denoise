@@ -29,6 +29,7 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
   - [上色修补：画笔和吸管](#上色修补画笔和吸管)
   - [外观与快捷键](#外观与快捷键)
 - [一键安装依赖](#一键安装依赖)
+  - [模型文件和手动下载](#模型文件和手动下载)
 - [命令行用法](#命令行用法)
 - [原理](#原理)
   - [试过但效果不好的方法](#试过但效果不好的方法)
@@ -79,7 +80,7 @@ QQ 群：**1130507071**，欢迎来做技术交流。群里聊 AI 视频、AI �
 python denoise_app.py      # 自动在浏览器打开 http://127.0.0.1:7865/
 ```
 
-Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOISE_PYTHON`、本文件夹的 `.venv`、`py` 启动器和 PATH 里的 Python，用第一个装好了依赖的。装有 NVIDIA 驱动时，torch 是 CPU 版的 Python 会被跳过，免得全局 Python 里的 CPU 版 torch 让你一直跑在 CPU 上；`DENOISE_PYTHON` 指定的不受这条限制，确实想用 CPU 版就设它。都没有就在窗口里运行一键安装（见下面「一键安装依赖」），装完自动打开。图片只在本机处理，不会上传；结果自动存到 `outputs/`（可用环境变量 `ANIME_DENOISE_OUTPUT` 改位置）。
+Windows 上也可以双击 `去噪工具.bat`：它依次找环境变量 `DENOISE_PYTHON`、本文件夹的 `.venv`、`py` 启动器和 PATH 里的 Python，用第一个装好了依赖的。电脑有 NVIDIA 显卡或支持的 AMD 显卡时，用不上显卡的 Python（CPU 版 torch、驱动太旧等）会被跳过，免得全局 Python 里的 CPU 版 torch 让你一直跑在 CPU 上；跳过哪个、为什么，窗口里都会写出来。一键安装确认过这张显卡只能用 CPU 时会记下来，之后双击直接用 CPU 版启动，不再反复安装（换了显卡或驱动会重新检查）；`DENOISE_PYTHON` 指定的不受这条限制，确实想用 CPU 版就设它。都没有就在窗口里运行一键安装（见下面「一键安装依赖」），装完自动打开。网页启动失败时会弹窗显示错误和日志位置，不会一闪就没了。图片只在本机处理，不会上传；结果自动存到 `outputs/`（可用环境变量 `ANIME_DENOISE_OUTPUT` 改位置）。
 
 ![GUI 总览](examples/gui_compare.webp)
 
@@ -174,6 +175,21 @@ python setup_env.py --kind cpu           # 也可以手动指定：auto / cuda /
 
 设备在运行时自动选，需要指定就加 `--device`：NVIDIA 用 `cuda`，Apple Silicon 用 `mps`，其余用 `cpu`（三平台同一套命令）。Metal 没有 float64，所以 L0 在 MPS 上跑单精度：作者在一张约 79 万像素的图上实测，和 CPU 结果相比只有 3 个像素差 2 级，其余完全一样。
 
+### 模型文件和手动下载
+
+模型不随仓库分发，第一次用到时自动下载到本文件夹的 `models/`，所以整个文件夹（连同 `.venv` 和 `models/`）可以直接拷到别的电脑上用。v1.4.1 及以前下载到 `~/.cache/gpt-anime-denoise` 的模型会继续使用，不用重新下载。
+
+下载用的是系统代理（或 `HTTPS_PROXY` 环境变量），每次读取最多等 60 秒；HuggingFace 上的模型连不上时，会自动改从镜像 hf-mirror.com 下载。都失败时，网页和命令行会提示文件名、下载地址和要放进的文件夹。也可以提前手动下载，放进 `models/`（文件名要和下表一致）：
+
+| 文件名 | 大小 | 用途 | 下载地址 |
+|---|---|---|---|
+| `RealESRGAN_x4plus_anime_6B.pth` | 18 MB | 默认去噪方案（必需） | [GitHub](https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth) |
+| `anime-seg_isnetis.safetensors` | 195 MB | 网页的「自动选中人物」 | [HuggingFace](https://huggingface.co/skytnt/anime-seg/resolve/main/model.safetensors) / [镜像](https://hf-mirror.com/skytnt/anime-seg/resolve/main/model.safetensors)，下载后的 `model.safetensors` 要改名 |
+| `2x_APISR_RRDB_GAN_generator.pth` | 18 MB | 命令行 `--all` 对比 | [HuggingFace](https://huggingface.co/camenduru/APISR/resolve/main/2x_APISR_RRDB_GAN_generator.pth) / [镜像](https://hf-mirror.com/camenduru/APISR/resolve/main/2x_APISR_RRDB_GAN_generator.pth) |
+| `up2x-latest-denoise3x.pth` | 5 MB | 命令行 `--all` 对比 | [GitHub](https://github.com/bilibili/ailab/releases/download/Real-CUGAN/updated_weights.zip)，在压缩包里 |
+
+放进去的文件会先校验 SHA-256（值见 `denoise.py` 的 `SHA256`），不对的会提示删掉重下。
+
 ## 命令行用法
 
 ```bash
@@ -193,7 +209,7 @@ python denoise.py image.png --l0 0.002   # 自行调节 L0 强度
 
 支持 PNG、JPEG、WebP、BMP、GIF（静态）、TIFF、AVIF。透明背景、EXIF 方向和 RGB 图的色彩配置（ICC）会保留，16 位图会正确转成 8 位，CMYK 按内嵌配置转成 RGB；输出都是 PNG。
 
-模型在第一次运行时自动下载到 `~/.cache/gpt-anime-denoise`（共约 100 MB，带 SHA-256 校验），也可以用 `--models` 指定已有目录。有 NVIDIA 显卡时自动用 GPU，Apple Silicon 用 MPS，其余（集显、Intel Mac）用 CPU，结果一样，只是慢。
+模型在第一次运行时自动下载到本文件夹的 `models/`（默认方案只要约 18 MB，带 SHA-256 校验），也可以用 `--models` 指定已有目录；下载不下来时见[模型文件和手动下载](#模型文件和手动下载)。有 NVIDIA 显卡时自动用 GPU，Apple Silicon 用 MPS，其余（集显、Intel Mac）用 CPU，结果一样，只是慢。
 
 实测速度（1024×1536，约 157 万像素，和 Codex 默认出的 16:9 图 1672×941 差不多大；默认方案）：
 
@@ -273,6 +289,7 @@ GPT 出的写实图也有这种细碎纹理，画面细节越多、灯光越复�
 - [@Moemu](https://github.com/Moemu) 在 [PR #6](https://github.com/CXP-2024/gpt-anime-denoise/pull/6) 里让一键安装认得新版 NVIDIA 驱动的 `nvidia-smi`（“CUDA UMD Version”），感谢。
 - [@Plastic-time](https://github.com/Plastic-time) 在 [PR #7](https://github.com/CXP-2024/gpt-anime-denoise/pull/7)–[#12](https://github.com/CXP-2024/gpt-anime-denoise/pull/12) 里修了六个问题：路径带空格或逗号时「在文件夹中显示」打开错文件夹、粘贴的图片重开后被覆盖、`--l0` 为 0 时报错和负数时死循环、已装 CPU 版 torch 时一键安装装不上 CUDA 版、依赖缺 psutil 导致 CPU 上的内存估算不准、一键安装下载新 torch 失败时会把能用的旧 torch 先卸掉，感谢。
 - [@WanX609](https://github.com/WanX609) 在 [issue #14](https://github.com/CXP-2024/gpt-anime-denoise/issues/14) 里查清了大图上传只报 Failed to fetch 的原因（后台没读完请求就回错误，连接被重置），并给出了修法，感谢。
+- [@wjz2001](https://github.com/wjz2001) 在 [issue #15](https://github.com/CXP-2024/gpt-anime-denoise/issues/15) 里逐条查出了一键启动的问题（环境被跳过时看不到原因、退回 CPU 后每次都重新安装、后台启动失败没有提示、AMD 显卡被 CPU 版 torch 抢先等），在 [issue #16](https://github.com/CXP-2024/gpt-anime-denoise/issues/16) 里建议列出模型下载地址、下载失败时给出地址、模型放进项目文件夹，感谢。
 
 ## 许可
 

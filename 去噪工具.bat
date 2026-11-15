@@ -1,53 +1,57 @@
 @echo off
-rem Opens the denoise web app with the first Python that can import its dependencies:
-rem DENOISE_PYTHON (full path to a python.exe), .venv next to this file, H:\ComfyUI-latest\.venv,
-rem then the py launcher and python on PATH. When none can, setup_env.py installs them into .venv
-rem in this window first. Keep this file ASCII: cmd misreads UTF-8 batch files.
+rem Opens the denoise web app with the first Python that can run it: DENOISE_PYTHON (full path to a
+rem python.exe), .venv next to this file, then the py launcher and python on PATH. When none can,
+rem setup_env.py installs the dependencies into .venv in this window first.
+rem Keep this file ASCII: cmd misreads UTF-8 batch files.
 rem
-rem On a computer with an NVIDIA driver (nvidia-smi on PATH) a Python whose torch is a CPU-only build
-rem is skipped, so a CPU torch in a global Python no longer hides the one-click CUDA install.
-rem DENOISE_PYTHON is always used as given, CPU build or not.
+rem "setup_env.py --probe" runs inside each candidate and prints PYEXE=<its path> only when the imports
+rem work and, on a computer with an NVIDIA or supported AMD card, torch can really run on that card
+rem (unless setup_env.py already found that only the CPU works on this card and driver). Otherwise it
+rem says why it was skipped. DENOISE_PYTHON is always used as given, CPU build or not.
 setlocal
 set "PYEXE="
-set "DENOISE_NEED_GPU="
-where nvidia-smi >nul 2>nul && set "DENOISE_NEED_GPU=1"
+set "PROBE=auto"
 call :find
 if defined PYEXE goto launch
 
 set "BASEPY="
-where py >nul 2>nul && set "BASEPY=py -3"
-if not defined BASEPY where python >nul 2>nul && set "BASEPY=python"
+call :base py -3
+if not defined BASEPY call :base python
 if not defined BASEPY goto nopython
-%BASEPY% "%~dp0setup_env.py" || goto failed
+"%BASEPY%" "%~dp0setup_env.py" || goto failed
 rem Accept what setup installed even when it had to fall back to the CPU build; it says why.
-set "DENOISE_NEED_GPU="
+set "PROBE=any"
 call :find
 if not defined PYEXE goto failed
 
 :launch
-rem pythonw keeps the app running without a console window
-set "PYW=%PYEXE:python.exe=pythonw.exe%"
+rem pythonw keeps the app running without a console window; setup_env.py --launch shows a message box
+rem with the error if the app fails to start
+for %%P in ("%PYEXE%") do set "PYW=%%~dpPpythonw.exe"
 if not exist "%PYW%" set "PYW=%PYEXE%"
-start "" "%PYW%" "%~dp0denoise_app.py"
+start "" "%PYW%" "%~dp0setup_env.py" --launch
+if errorlevel 1 goto failed
 exit /b 0
 
 :find
-if defined DENOISE_PYTHON call :tryany "%DENOISE_PYTHON%"
-if not defined PYEXE call :try "%~dp0.venv\Scripts\python.exe"
-if not defined PYEXE call :try "H:\ComfyUI-latest\.venv\Scripts\python.exe"
-if not defined PYEXE call :try py -3
-if not defined PYEXE call :try python
+if defined DENOISE_PYTHON call :probe any "%DENOISE_PYTHON%"
+if not defined PYEXE if exist "%~dp0.venv\Scripts\python.exe" call :probe %PROBE% "%~dp0.venv\Scripts\python.exe"
+if not defined PYEXE where py >nul 2>nul && call :probe %PROBE% py -3
+if not defined PYEXE where python >nul 2>nul && call :probe %PROBE% python
 exit /b 0
 
-:try
-rem Records the interpreter's real path only when all the imports succeed and, when DENOISE_NEED_GPU
-rem is set, torch is a CUDA or ROCm build that can run a kernel on the card (a cu130 build has none for
-rem a GTX 10xx, so that Python is skipped and setup_env.py picks an older CUDA build).
-for /f "usebackq delims=" %%P in (`call %* -c "import os, sys, torch, spandrel, numpy, PIL; g = os.environ.get('DENOISE_NEED_GPU'); sys.exit(1) if g and not (torch.version.cuda or getattr(torch.version, 'hip', None)) else None; g and torch.cuda.is_available() and (torch.ones(1, device='cuda') + 1).item(); print(sys.executable)" 2^>nul`) do set "PYEXE=%%P"
+:probe
+rem %1 = auto or any, the rest = the command that starts that Python
+set "MODE=%~1"
+shift /1
+set "CMD=%1 %2"
+if "%~2"=="" set "CMD=%1"
+for /f "usebackq tokens=1,* delims==" %%A in (`call %CMD% "%~dp0setup_env.py" --probe %MODE%`) do if "%%A"=="PYEXE" if exist "%%B" set "PYEXE=%%B"
 exit /b 0
 
-:tryany
-for /f "usebackq delims=" %%P in (`call %* -c "import torch, spandrel, numpy, PIL, sys; print(sys.executable)" 2^>nul`) do set "PYEXE=%%P"
+:base
+rem a Python that really runs, for creating .venv (a broken py launcher is skipped)
+for /f "usebackq delims=" %%P in (`call %* -c "import sys; print(sys.executable)" 2^>nul`) do if exist "%%P" set "BASEPY=%%P"
 exit /b 0
 
 :nopython
