@@ -1,0 +1,12 @@
+{
+  "realesrgan_x4plus_anime_6b": {
+    "1 thread": 29.346,
+    "4 threads": 9.189,
+    "all cores": 10.106
+  },
+  "realesr_animevideov3_x4": {
+    "1 thread": 2.18,
+    "4 threads": 0.967,
+    "all cores": 0.885
+  }
+}

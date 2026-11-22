@@ -1,0 +1,59 @@
+[
+  {
+    "tag": "01ee25d8",
+    "source": "img_01ee25d8ded0d126f4bc8b0a00b2f6c0-1_denoise.png",
+    "size": [
+      512,
+      512
+    ],
+    "crop_origin": [
+      824,
+      1203
+    ],
+    "t_downscale_s": 0.0018,
+    "t_esrgan_s": 9.628,
+    "t_resize_back_s": 0.0268,
+    "t_l0_s": 4.3077,
+    "mid_min": 0.0,
+    "mid_max": 1.0,
+    "mid_mean": 0.8822569504282834
+  },
+  {
+    "tag": "061d63a2",
+    "source": "img_061d63a2c2a2c6fceea865c2fa78e1d6-1_denoise.png",
+    "size": [
+      512,
+      512
+    ],
+    "crop_origin": [
+      912,
+      1075
+    ],
+    "t_downscale_s": 0.0012,
+    "t_esrgan_s": 6.384,
+    "t_resize_back_s": 0.0244,
+    "t_l0_s": 3.8419,
+    "mid_min": 0.0,
+    "mid_max": 1.0,
+    "mid_mean": 0.5425567028569241
+  },
+  {
+    "tag": "4dde2cb0",
+    "source": "img_4dde2cb047cc18a1b9c27fed8e344d53-1_denoise.png",
+    "size": [
+      512,
+      512
+    ],
+    "crop_origin": [
+      1664,
+      564
+    ],
+    "t_downscale_s": 0.0009,
+    "t_esrgan_s": 9.401,
+    "t_resize_back_s": 0.0381,
+    "t_l0_s": 4.0569,
+    "mid_min": 0.0,
+    "mid_max": 1.0,
+    "mid_mean": 0.5970766753153084
+  }
+]

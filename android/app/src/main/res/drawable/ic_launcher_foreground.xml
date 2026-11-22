@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- left: overlapping fish-scale arcs -->
+    <group>
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="2.4" android:strokeAlpha="0.95"
+            android:fillColor="#00000000"
+            android:pathData="M24,46a8,8 0 0,1 16,0" />
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="2.4" android:strokeAlpha="0.95"
+            android:fillColor="#00000000"
+            android:pathData="M40,46a8,8 0 0,1 16,0" />
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="2.4" android:strokeAlpha="0.95"
+            android:fillColor="#00000000"
+            android:pathData="M32,58a8,8 0 0,1 16,0" />
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="2.4" android:strokeAlpha="0.95"
+            android:fillColor="#00000000"
+            android:pathData="M24,70a8,8 0 0,1 16,0" />
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="2.4" android:strokeAlpha="0.95"
+            android:fillColor="#00000000"
+            android:pathData="M40,70a8,8 0 0,1 16,0" />
+    </group>
+
+    <!-- right: the same region as clean flat colour blocks -->
+    <path android:fillColor="#FFFFFF" android:pathData="M62,38h20v10h-20z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M62,50h20v8h-20z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M62,60h20v18h-20z" />
+
+    <!-- the split -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.6" android:strokeAlpha="0.55"
+        android:fillColor="#00000000"
+        android:pathData="M56,34v40" />
+</vector>

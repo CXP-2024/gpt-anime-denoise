@@ -1,0 +1,27 @@
+{
+  "reps": 5,
+  "input": "512x512",
+  "downscaled": [
+    307,
+    307
+  ],
+  "models": {
+    "realesrgan_x4plus_anime_6b": {
+      "model_mb": 17.961,
+      "sr_s": 7.639,
+      "resize_back_s": 0.0611,
+      "downscale_s": 0.01263,
+      "l0_s": 6.803,
+      "total_s": 14.516
+    },
+    "realesr_animevideov3_x4": {
+      "model_mb": 2.493,
+      "sr_s": 1.771,
+      "resize_back_s": 0.0209,
+      "downscale_s": 0.01263,
+      "l0_s": 6.803,
+      "total_s": 8.608
+    }
+  },
+  "speedup_v3_vs_6b": 4.31
+}

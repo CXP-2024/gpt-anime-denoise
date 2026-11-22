@@ -1,0 +1,35 @@
+{
+  "realesrgan_x4plus_anime_6b": {
+    "model_mb": 17.961,
+    "out_shape": [
+      1,
+      3,
+      2048,
+      2048
+    ],
+    "best_s": 26.226,
+    "median_s": 28.337,
+    "all_s": [
+      30.407,
+      28.337,
+      26.226
+    ]
+  },
+  "realesr_animevideov3_x4": {
+    "model_mb": 2.493,
+    "out_shape": [
+      1,
+      3,
+      2048,
+      2048
+    ],
+    "best_s": 2.476,
+    "median_s": 2.678,
+    "all_s": [
+      3.137,
+      2.476,
+      2.678
+    ]
+  },
+  "speedup_v3_over_6b": 10.59
+}

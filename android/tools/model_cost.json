@@ -1,0 +1,28 @@
+{
+  "realesrgan_x4plus_anime_6b": {
+    "params": 4467779,
+    "convs": 96,
+    "out_scale": 4,
+    "macs_per_px_m": 5.706,
+    "flops_per_px_m": 11.413,
+    "upscales": [
+      "Resize x2",
+      "Resize x2"
+    ]
+  },
+  "realesr_animevideov3_x4": {
+    "params": 621424,
+    "convs": 18,
+    "out_scale": 4,
+    "macs_per_px_m": 0.619,
+    "flops_per_px_m": 1.238,
+    "upscales": [
+      "DepthToSpace x4",
+      "Resize x2"
+    ]
+  },
+  "ratio_6b_over_v3": {
+    "macs": 9.22,
+    "params": 7.19
+  }
+}
