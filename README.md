@@ -10,6 +10,8 @@ Removes the "GPT-flavoured" noise OpenAI's GPT image models leave in anime and T
 
 **浏览器版（不用安装，打开就能用）：** https://hhxki.github.io/GPT-anime-denoise-web/ —— 由 [@hhxki](https://github.com/hhxki) 移植和维护（[源码](https://github.com/hhxki/GPT-anime-denoise-web)），在浏览器里用 WebGPU 本机处理，图片不上传。处理细节和本地版不完全相同，结果可能略有差异；想要和示例图一致的效果，请用本地版。
 
+**安卓版（APK）：** [下载 v1.0.0（21 MB）](https://github.com/Jianmiao/gpt-anime-denoise/releases/tag/android-v1.0.0) —— 由 [@Jianmiao](https://github.com/Jianmiao) 移植和维护（[源码](https://github.com/Jianmiao/gpt-anime-denoise/tree/android-port/android)），在手机上本机处理，不联网。为了在手机上跑得动，用的是更轻的 Real-ESRGAN animevideov3 模型，线条会略软，结果和本地版略有差异。
+
 > 如果您用本项目做出了满意的作品，麻烦在简介里 credit 本项目 [gpt-anime-denoise](https://github.com/CXP-2024/gpt-anime-denoise) 和作者 B 站 UP 主 [hihihihi202](https://space.bilibili.com/3546568969947566)。
 
 ## 交流群
